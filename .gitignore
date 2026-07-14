@@ -1,0 +1,16 @@
+# Build output
+target/
+
+# Runtime uploads
+uploads/
+
+# Local IDE files
+.idea/
+.vscode/
+*.iml
+
+# Local configuration and secrets
+application-local.properties
+.env
+.env.*
+!.env.example

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Register</title>
+</head>
+<body>
+
+<h2>Citizen Registration</h2>
+
+<form th:action="@{/register}" th:object="${user}" method="post">
+
+    <label>Full Name:</label>
+    <input type="text" th:field="*{fullName}" required/>
+    <br/>
+
+    <label>Email:</label>
+    <input type="email" th:field="*{email}" required/>
+    <br/>
+
+    <label>Password:</label>
+    <input type="password" th:field="*{hashedPassword}" required/>
+    <br/>
+
+    <label>Phone Number:</label>
+    <input type="text" th:field="*{phoneNumber}" required/>
+    <br/>
+
+    <!-- Role is hidden for now -->
+    <select th:field="*{role}" required>
+        <option value="">-- Select Role --</option>
+        <option value="CITIZEN">Citizen</option>
+        <option value="AUTHORITY">Authority Member</option>
+    </select>
+
+
+    <button type="submit">Register</button>
+</form>
+
+<p>Already have an account? <a th:href="@{/login}">Login</a></p>
+
+</body>
+</html>
