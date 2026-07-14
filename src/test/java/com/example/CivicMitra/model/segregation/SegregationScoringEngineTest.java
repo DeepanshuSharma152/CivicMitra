@@ -26,6 +26,17 @@ class SegregationScoringEngineTest {
     }
 
     @Test
+    void gracefullyHandlesNullOrEmptySubmissions() {
+        SegregationScoringEngine.ScoringResult emptyResult = engine.evaluate(List.of());
+        SegregationScoringEngine.ScoringResult nullResult = engine.evaluate(null);
+
+        assertFalse(emptyResult.passed());
+        assertEquals("No bin photos submitted.", emptyResult.failureReason());
+        assertFalse(nullResult.passed());
+        assertEquals("No bin photos submitted.", nullResult.failureReason());
+    }
+
+    @Test
     void rejectsEmptyAndSuspiciousBinPhotos() {
         BinAnalysis emptyGreen = validBin(BinType.GREEN, 0.99);
         emptyGreen.setEmpty(true);
@@ -100,6 +111,33 @@ class SegregationScoringEngineTest {
 
         assertFalse(redResult.passed());
         assertEquals(0.74, redResult.overallScore());
+    }
+
+    @Test
+    void passesWhenConfidenceIsExactlyAtConfiguredThresholds() {
+        SegregationScoringEngine.ScoringResult mandatoryBinResult = engine.evaluate(List.of(
+                validBin(BinType.GREEN, 0.82), validBin(BinType.BLUE, 0.82)
+        ));
+
+        assertTrue(mandatoryBinResult.passed());
+        assertEquals(0.82, mandatoryBinResult.overallScore(), 0.000_001);
+
+        SegregationScoringEngine.ScoringResult optionalBinResult = engine.evaluate(List.of(
+                validBin(BinType.GREEN, 0.82), validBin(BinType.BLUE, 0.82),
+                validBin(BinType.RED, 0.75), validBin(BinType.BLACK, 0.75)
+        ));
+
+        assertTrue(optionalBinResult.passed());
+    }
+
+    @Test
+    void rejectsDuplicateMandatoryBinsWhenTheOtherMandatoryBinIsMissing() {
+        SegregationScoringEngine.ScoringResult result = engine.evaluate(List.of(
+                validBin(BinType.GREEN, 0.95), validBin(BinType.GREEN, 0.90)
+        ));
+
+        assertFalse(result.passed());
+        assertTrue(result.failureReason().contains("BLUE bin"));
     }
 
     @Test
