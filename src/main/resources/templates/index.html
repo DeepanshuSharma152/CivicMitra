@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/civicmitra.css">
     <link rel="stylesheet" href="/civicmitra-refined.css">
+    <link rel="stylesheet" href="/civicmitra-reports.css">
 </head>
 <body>
 <main class="app-shell">
@@ -122,12 +123,22 @@
 
     <section id="history" class="history-section"><div class="section-title"><div><p class="eyebrow">YOUR ACTIVITY</p><h2>Recent bin checks</h2></div><button id="loadHistoryButton" class="button button-outline" type="button">View history</button></div><div id="historyList" class="history-list"><p>Enter your home reference to see your recent bin checks.</p></div></section>
 
+    <section id="reports" class="reports-section">
+        <div class="section-title"><div><p class="eyebrow">COMMUNITY CARE</p><h2>Neighbourhood reports</h2></div><div class="report-actions"><button id="communityReportsButton" class="button button-outline" type="button">Community updates</button><button id="myReportsButton" class="button button-outline" type="button">My reports</button><button id="newReportButton" class="button button-primary" type="button">Report an issue</button></div></div>
+        <div id="reportList" class="report-list"><p>Your reports and community updates will appear here.</p></div>
+    </section>
+
     <section class="benefit-strip"><div><span>♢</span><p><strong>Simple sorting</strong>Clear guidance for every bin</p></div><div><span>▦</span><p><strong>Pickup pass</strong>Ready when your bins are sorted</p></div><div><span>♙</span><p><strong>Collection update</strong>Know when pickup is complete</p></div></section>
 </main>
 
-<dialog id="loginDialog" class="login-dialog"><form id="loginForm" method="dialog"><button id="closeLogin" class="dialog-close" type="button" aria-label="Close">×</button><p class="eyebrow">WELCOME BACK</p><h2>Sign in to CivicMitra</h2><p class="dialog-description">Access your home collection and pickup updates.</p><label>Email<input id="loginEmail" type="email" required autocomplete="email"></label><label>Password<input id="loginPassword" type="password" required autocomplete="current-password"></label><p id="loginError" class="form-error" role="alert"></p><button id="loginSubmit" class="button button-primary full-width" type="submit">Sign in</button></form></dialog>
+<dialog id="loginDialog" class="login-dialog"><form id="loginForm" method="dialog"><button id="closeLogin" class="dialog-close" type="button" aria-label="Close">×</button><p class="eyebrow">WELCOME BACK</p><h2>Sign in to CivicMitra</h2><p class="dialog-description">Access your home collection and pickup updates.</p><label>Email<input id="loginEmail" type="email" required autocomplete="email"></label><label>Password<input id="loginPassword" type="password" required autocomplete="current-password"></label><p id="loginError" class="form-error" role="alert"></p><button id="loginSubmit" class="button button-primary full-width" type="submit">Sign in</button><button id="openRegisterButton" class="text-button" type="button">Create an account</button></form></dialog>
+
+<dialog id="registerDialog" class="service-dialog"><form id="registerForm"><button class="dialog-close" type="button" data-close-dialog="registerDialog" aria-label="Close">×</button><p class="eyebrow">JOIN CIVICMITRA</p><h2>Create your account</h2><div class="form-grid"><label>Full name<input id="registerName" required autocomplete="name"></label><label>Mobile number<input id="registerPhone" inputmode="numeric" pattern="[0-9]{10}" required autocomplete="tel"></label><label>Email<input id="registerEmail" type="email" required autocomplete="email"></label><label>Password<input id="registerPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Account type<select id="registerRole"><option value="CITIZEN">Resident</option><option value="WORKER">Collection team</option></select></label><label>Municipality reference<input id="registerMunicipality" inputmode="numeric" placeholder="Optional"></label><label>Ward reference<input id="registerWard" inputmode="numeric" placeholder="Optional"></label></div><p id="registerError" class="form-error" role="alert"></p><button class="button button-primary full-width" type="submit">Create account</button></form></dialog>
+
+<dialog id="reportDialog" class="service-dialog"><form id="reportForm"><button class="dialog-close" type="button" data-close-dialog="reportDialog" aria-label="Close">×</button><p class="eyebrow">COMMUNITY CARE</p><h2 id="reportDialogTitle">Report an issue</h2><input id="reportId" type="hidden"><div class="form-grid"><label class="wide">What needs attention?<input id="reportTitle" minlength="5" maxlength="100" required placeholder="For example: Overflowing public bin"></label><label class="wide">Tell us more<textarea id="reportDescription" required placeholder="Share what happened and where it is."></textarea></label><label>Ward reference<input id="reportWard" inputmode="numeric" required placeholder="Your ward number"></label><label>Issue type<input id="reportCategory" placeholder="For example: Waste collection"></label><label class="wide">Add a photo<input id="reportImage" type="file" accept="image/*"></label></div><p id="reportError" class="form-error" role="alert"></p><div class="report-actions"><button id="deleteReportButton" class="button button-outline-danger hidden" type="button">Remove report</button><button class="button button-primary" type="submit">Save report</button></div></form></dialog>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script src="/civicmitra.js"></script>
+<script src="/civicmitra-complaints.js"></script>
 </body>
 </html>

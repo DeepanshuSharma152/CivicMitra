@@ -14,12 +14,17 @@ public class TrustService {
         int score = 50; // Base starting point
 
         // 1. AI Logic
-        if ("HIGH".equals(ai.locationConsistency())) score += 15;
-        if (ai.isSuspicious()) score -= 40;
-        score += (int)(ai.confidence() * 10);
+        if (ai != null) {
+            if ("HIGH".equals(ai.locationConsistency())) score += 15;
+            if (ai.isSuspicious()) score -= 40;
+            score += (int)(ai.confidence() * 10);
+        }
 
         // 2. Proximity Check (Device vs Reported)
-        if (deviceLat != null && deviceLng != null) {
+        if (deviceLat != null && deviceLng != null
+                && meta != null
+                && meta.getReportedLat() != null
+                && meta.getReportedLng() != null) {
             double dist = haversine(deviceLat, deviceLng, meta.getReportedLat(), meta.getReportedLng());
 
             if (dist < 0.5) score += 20;      // Within 500m
