@@ -41,6 +41,20 @@ public class SegregationController {
         }
     }
 
+    // GET /qr/{submissionId}
+    // Returns the full submission response including QR token + base64 PNG image
+    @GetMapping("/qr/{submissionId}")
+    public ResponseEntity<?> getQRForSubmission(@PathVariable Long submissionId) {
+        try {
+            SegregationResponseDTO response = segregationService.getQRForSubmission(submissionId);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(404).body("Submission not found: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Error fetching QR: " + e.getMessage());
+        }
+    }
+
     // GET /history/{householdId}
     // Calls segregationService.getHistoryForHousehold
     @GetMapping("/history/{householdId}")

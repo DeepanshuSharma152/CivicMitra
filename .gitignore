@@ -3,6 +3,7 @@ target/
 
 # Runtime uploads
 uploads/
+.pnpm-store/
 
 # Local IDE files
 .idea/

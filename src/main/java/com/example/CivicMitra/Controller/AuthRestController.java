@@ -7,6 +7,7 @@ import com.example.CivicMitra.JWTAuth.JwtService;
 import com.example.CivicMitra.Service.CustomUserDetailsService;
 import com.example.CivicMitra.Service.UserService;
 import com.example.CivicMitra.model.core.User;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,10 +25,10 @@ public class AuthRestController {
     private static final Logger logger = LoggerFactory.getLogger(AuthRestController.class);
 
     @Autowired
-    private AuthenticationManager authenticationManager; // Spring's "Verifier"
+    private AuthenticationManager authenticationManager;
 
     @Autowired
-    private JwtService jwtService; // Your "ID Printer"
+    private JwtService jwtService;
 
     @Autowired
     private UserService userService;
@@ -36,7 +37,7 @@ public class AuthRestController {
     private CustomUserDetailsService customUserDetailsService;
 
     @PostMapping("/register")
-    public ResponseEntity<?> registerUser(@RequestBody RegisterRequestDTO request) {
+    public ResponseEntity<?> registerUser(@Valid @RequestBody RegisterRequestDTO request) {
         try {
             logger.info("New registration: {}", request.getEmail());
             RegisterResponseDTO response = userService.registerUser(request);
@@ -46,7 +47,7 @@ public class AuthRestController {
             return ResponseEntity.status(400).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             logger.error("Registration failed", e);
-            return ResponseEntity.status(500).body(Map.of("error", "An error occurred during registration"));
+            return ResponseEntity.status(500).body(Map.of("error", "An unexpected error occurred during registration"));
         }
     }
 

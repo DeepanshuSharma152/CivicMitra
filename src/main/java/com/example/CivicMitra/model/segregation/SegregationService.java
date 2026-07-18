@@ -8,6 +8,7 @@ import com.example.CivicMitra.DTO.QRScanResponseDTO;
 import com.example.CivicMitra.DTO.SegregationResponseDTO;
 import com.example.CivicMitra.Enums.BinType;
 import com.example.CivicMitra.Enums.SubmissionStatus;
+import com.example.CivicMitra.Repository.ComplianceStreakRepository;
 import com.example.CivicMitra.Repository.GreenQRTokenRepository;
 import com.example.CivicMitra.Repository.HouseholdRepository;
 import com.example.CivicMitra.Repository.SegregationRepository;
@@ -44,19 +45,22 @@ public class SegregationService {
     private final WasteAiService wasteAiService;
     private final SegregationScoringEngine scoringEngine;
     private final TrustService trustService;
+    private final ComplianceStreakRepository streakRepository;
 
     public SegregationService(SegregationRepository segregationRepository,
                               HouseholdRepository householdRepository,
                               GreenQRTokenRepository qrTokenRepository,
                               WasteAiService wasteAiService,
                               SegregationScoringEngine scoringEngine,
-                              TrustService trustService) {
+                              TrustService trustService,
+                              ComplianceStreakRepository streakRepository) {
         this.segregationRepository = segregationRepository;
         this.householdRepository = householdRepository;
         this.qrTokenRepository = qrTokenRepository;
         this.wasteAiService = wasteAiService;
         this.scoringEngine = scoringEngine;
         this.trustService = trustService;
+        this.streakRepository = streakRepository;
     }
 
     // ─────────────────────────────────────────────────────────
@@ -139,7 +143,8 @@ public class SegregationService {
 
             // AI analysis — each bin photo analyzed independently
             WasteAnalysis ai = wasteAiService.analyzeWasteImage(
-                    file.getBytes());
+                    Files.readAllBytes(Paths.get(uploadDir + fileName)),
+                    file.getOriginalFilename());
 
             // Build BinAnalysis entity from AI response
             BinAnalysis binAnalysis = new BinAnalysis();
@@ -152,7 +157,7 @@ public class SegregationService {
             binAnalysis.setContaminationDetail(ai.contaminationDetail());
             binAnalysis.setSuspicious(ai.isSuspicious());
             binAnalysis.setEmpty(ai.isEmpty());
-            binAnalysis.setProperlyWrapped(ai.isProperlyWrapped());
+            binAnalysis.setProperlyWrapped(ai.isProperlyWrapped()); // maps to field 'properlyWrapped'
             // submission link set after submission entity is built
             binAnalyses.add(binAnalysis);
         }
@@ -253,11 +258,25 @@ public class SegregationService {
         token.setWorkerScanLng(workerLng);
         qrTokenRepository.save(token);
 
+        // ── Lazily update ComplianceStreak for this household ─────
+        updateStreak(household);
+
         return new QRScanResponseDTO(
                 "VALID",
                 household.getHouseNumber(),
                 true,
                 "Waste collected. Household marked compliant.");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // QUERY: Get QR for a specific submission (for GET /qr/{id})
+    // ─────────────────────────────────────────────────────────
+    @Transactional(readOnly = true)
+    public SegregationResponseDTO getQRForSubmission(Long submissionId) {
+        SegregationSubmission submission = segregationRepository.findById(submissionId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Submission not found with ID: " + submissionId));
+        return mapToResponse(submission);
     }
 
     // ─────────────────────────────────────────────────────────
@@ -365,5 +384,50 @@ public class SegregationService {
         } catch (IllegalArgumentException e) {
             return null; // UNKNOWN from AI → null → skips mismatch check
         }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // PRIVATE: Update or lazily create ComplianceStreak
+    // Called only after a QR token is successfully consumed.
+    // ─────────────────────────────────────────────────────────
+    private void updateStreak(Household household) {
+        ComplianceStreak streak = streakRepository
+                .findByHousehold(household)
+                .orElseGet(() -> {
+                    // First-ever verified submission for this household
+                    ComplianceStreak newStreak = new ComplianceStreak();
+                    newStreak.setHousehold(household);
+                    return newStreak;
+                });
+
+        LocalDate today = LocalDate.now();
+        LocalDate last = streak.getLastGreenDate();
+
+        // If last green day was yesterday → extend streak; otherwise reset to 1
+        if (last != null && last.equals(today.minusDays(1))) {
+            streak.setCurrentStreak(streak.getCurrentStreak() + 1);
+        } else if (last != null && last.equals(today)) {
+            // Already updated today (duplicate scan guard — do not double-count)
+            return;
+        } else {
+            // Streak broken — reset
+            streak.setCurrentStreak(1);
+        }
+
+        // Update all-time longest streak
+        if (streak.getCurrentStreak() > streak.getLongestStreak()) {
+            streak.setLongestStreak(streak.getCurrentStreak());
+        }
+
+        streak.setTotalGreenDays(streak.getTotalGreenDays() + 1);
+        streak.setLastGreenDate(today);
+        streak.setLastUpdatedAt(LocalDateTime.now());
+
+        // Fine immunity reward: 30 consecutive green days → 30-day immunity window
+        if (streak.getCurrentStreak() >= 30) {
+            streak.setFineImmunityUntil(today.plusDays(30));
+        }
+
+        streakRepository.save(streak);
     }
 }

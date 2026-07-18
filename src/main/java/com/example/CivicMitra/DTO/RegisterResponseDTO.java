@@ -11,7 +11,8 @@ import lombok.Setter;
 @AllArgsConstructor
 public class RegisterResponseDTO {
     private Long userId;
+    private String email;
     private String role;
+    private Long municipalityId;
     private String message;
 }
-

@@ -1,192 +1,392 @@
 package com.example.CivicMitra.Ai.service;
 
 import com.example.CivicMitra.Ai.response.WasteAnalysis;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.core.io.ByteArrayResource;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
-import org.springframework.util.MimeTypeUtils;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.http.*;
+
+import java.util.*;
 
 @Service
 public class WasteAiService {
-    private final ChatClient chatClient;
 
-    public WasteAiService(ChatClient.Builder builder) {
-        this.chatClient = builder.build();
+    @org.springframework.beans.factory.annotation.Value("${groq.api.key}")
+    private String apiKey;
+
+    private final RestTemplate restTemplate = new RestTemplate();
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private static final String GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+    public WasteAnalysis analyzeWasteImage(byte[] imageBytes, String originalFilename) {
+        System.out.println("DEBUG: Sending image to Groq, original bytes: " + imageBytes.length);
+
+        // Compress image to save tokens and prevent "invalid image data" errors from large resolutions
+        imageBytes = compressImage(imageBytes);
+        System.out.println("DEBUG: Compressed image bytes: " + imageBytes.length);
+
+        // Step 1 — base64 encode
+        String base64 = Base64.getEncoder().encodeToString(imageBytes);
+        String mime = "image/jpeg"; // compressImage always returns jpeg
+
+        // Step 2 — build request body for Groq API (OpenAI compatible format)
+        Map<String, Object> textContent = Map.of(
+            "type", "text",
+            "text", buildPrompt()
+        );
+        Map<String, Object> imageContent = Map.of(
+            "type", "image_url",
+            "image_url", Map.of(
+                "url", "data:" + mime + ";base64," + base64
+            )
+        );
+
+        Map<String, Object> message = Map.of(
+            "role", "user",
+            "content", List.of(textContent, imageContent)
+        );
+
+        // Use HashMap (not Map.of) so we can add reasoning_effort to disable thinking.
+        // Disabling thinking saves ~1700 completion tokens per call, keeping us under TPM limit.
+        Map<String, Object> requestBody = new java.util.HashMap<>();
+        requestBody.put("model", "qwen/qwen3.6-27b");
+        requestBody.put("messages", List.of(message));
+        requestBody.put("temperature", 0.1);
+        requestBody.put("reasoning_effort", "none"); // Disable chain-of-thought to save tokens
+
+        // Step 3 — set headers
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(apiKey);
+
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+
+        // Step 4 — call Groq directly with retry
+        int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                ResponseEntity<String> response = restTemplate.postForEntity(
+                        GROQ_URL, entity, String.class);
+
+                System.out.println("DEBUG: Groq status: " + response.getStatusCode());
+
+                String body = response.getBody();
+                System.out.println("DEBUG: Groq raw response: " + body);
+
+                // Step 5 — extract content from OpenAI format
+                JsonNode root = objectMapper.readTree(body);
+                String rawContent = root
+                        .path("choices")
+                        .path(0)
+                        .path("message")
+                        .path("content")
+                        .asText();
+
+                System.out.println("DEBUG: AI content: " + rawContent);
+
+                // Step 6 — clean (if needed) and parse JSON
+                rawContent = cleanJson(rawContent);
+
+                return objectMapper.readValue(rawContent, WasteAnalysis.class);
+
+            } catch (Exception e) {
+                System.err.println("ERROR calling Groq (Attempt " + attempt + "): " + e.getMessage());
+
+                // Do NOT retry on image format errors — they will never recover
+                if (e.getMessage() != null && e.getMessage().contains("invalid image data")) {
+                    throw new RuntimeException(
+                        "Unsupported or corrupt image. Please upload a JPEG, PNG, or WebP photo.", e);
+                }
+
+                if (attempt == maxRetries) {
+                    throw new RuntimeException(
+                            "Failed to get AI analysis after " + maxRetries + " attempts: " + e.getMessage(), e);
+                }
+                try {
+                    long sleepMs = 2000L * attempt;
+                    // Check if there is a "Please try again in X.Xs" message
+                    if (e.getMessage() != null && e.getMessage().contains("Please try again in ")) {
+                        String msg = e.getMessage();
+                        int start = msg.indexOf("Please try again in ") + 20;
+                        int end = msg.indexOf("s.", start);
+                        if (start != -1 && end != -1) {
+                            try {
+                                double seconds = Double.parseDouble(msg.substring(start, end));
+                                sleepMs = (long) (seconds * 1000) + 1500; // wait extra 1.5 secs to be safe
+                                System.out.println("DEBUG: Extracted wait time, sleeping for " + sleepMs + " ms");
+                            } catch (NumberFormatException nfe) {
+                                sleepMs = 21000L; // Fallback
+                            }
+                        } else {
+                            sleepMs = 21000L;
+                        }
+                    } else if (e.getMessage() != null && e.getMessage().contains("429 Too Many Requests")) {
+                        sleepMs = 21000L;
+                    }
+                    Thread.sleep(sleepMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Thread interrupted during retry backoff", ie);
+                }
+            }
+        }
+        throw new RuntimeException("Failed to get AI analysis");
     }
 
-    public WasteAnalysis analyzeWasteImage(byte[] imageBytes) {
-        ByteArrayResource imageResource = new ByteArrayResource(imageBytes);
+    private byte[] compressImage(byte[] originalImage) {
+        int maxDim = 384; // Smaller target = fewer tokens per API call
+        try {
+            java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(originalImage);
+            java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(bais);
 
-        return chatClient.prompt()
-                .user(u -> u
-                        .text("""
-                        You are the Senior Solid Waste Management (SWM) Compliance Auditor
-                        for the Municipal Corporation of India, operating under the revised
-                        Solid Waste Management Rules, 2026, notified by the Ministry of
-                        Environment, Forest and Climate Change. These rules mandate strict
-                        4-bin segregation at source. Non-compliance attracts fines up to
-                        ₹14,000 per violation.
+            if (image == null) {
+                // ImageIO can't decode the format (e.g. HEIC/WEBP).
+                // Wrap bytes in a placeholder RGB image so we can still output a valid JPEG.
+                System.out.println("DEBUG: ImageIO could not read format; forcing JPEG re-encode at " + maxDim + "px");
+                // Decode via Toolkit as a last resort
+                java.awt.Image awtImage = java.awt.Toolkit.getDefaultToolkit().createImage(originalImage);
+                java.awt.MediaTracker tracker = new java.awt.MediaTracker(new java.awt.Container());
+                tracker.addImage(awtImage, 0);
+                tracker.waitForAll();
+                int w = awtImage.getWidth(null);
+                int h = awtImage.getHeight(null);
+                if (w <= 0 || h <= 0) {
+                    throw new RuntimeException(
+                        "Image format not supported. Please upload a JPEG, PNG, or WebP image.");
+                }
+                image = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_RGB);
+                java.awt.Graphics2D g = image.createGraphics();
+                g.drawImage(awtImage, 0, 0, null);
+                g.dispose();
+            }
 
-                        Analyze the provided image carefully and return a JSON assessment.
+            int width = image.getWidth();
+            int height = image.getHeight();
+            double scale = Math.min(1.0, Math.min((double) maxDim / width, (double) maxDim / height));
+            int newWidth  = Math.max(1, (int) (width  * scale));
+            int newHeight = Math.max(1, (int) (height * scale));
 
-                        ═══════════════════════════════════════════════
-                        TASK 1 — WASTE CLASSIFICATION & FACILITY ROUTING
-                        ═══════════════════════════════════════════════
-                        Identify the primary waste type and assign the correct FACILITY_KEY:
+            java.awt.image.BufferedImage resized = new java.awt.image.BufferedImage(newWidth, newHeight, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            java.awt.Graphics2D g2d = resized.createGraphics();
+            g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g2d.drawImage(image, 0, 0, newWidth, newHeight, null);
+            g2d.dispose();
 
-                        'DADUMAJRA_CBG'  → Wet/Organic waste:
-                            Kitchen scraps, food leftovers, vegetable and fruit peels,
-                            tea leaves, eggshells, cooked food, flowers, garden/garden waste.
-                            This waste is biodegradable and goes to the Compressed Biogas plant.
+            // Write with explicit quality (0.80) to control output size
+            javax.imageio.ImageWriter writer = javax.imageio.ImageIO.getImageWritersByFormatName("jpeg").next();
+            javax.imageio.plugins.jpeg.JPEGImageWriteParam params = new javax.imageio.plugins.jpeg.JPEGImageWriteParam(null);
+            params.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+            params.setCompressionQuality(0.80f);
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            writer.setOutput(javax.imageio.ImageIO.createImageOutputStream(baos));
+            writer.write(null, new javax.imageio.IIOImage(resized, null, null), params);
+            writer.dispose();
 
-                        'DADUMAJRA_RDF'  → Dry/Recyclable waste:
-                            Clean plastic bottles, packaging material, paper, cardboard,
-                            glass bottles, metal items, rubber, wood, textiles.
-                            This is non-biodegradable but recyclable.
+            System.out.println("DEBUG: Compressed " + width + "x" + height + " -> " + newWidth + "x" + newHeight
+                    + " JPEG, " + baos.size() + " bytes");
+            return baos.toByteArray();
+        } catch (Exception e) {
+            System.err.println("Error compressing image: " + e.getMessage());
+            return originalImage;
+        }
+    }
 
-                        'SECTOR_25_CD'   → Construction & Demolition waste:
-                            Bricks, concrete, tiles, sand, gravel, debris from construction.
+    private String cleanJson(String raw) {
+        if (raw == null) throw new RuntimeException("AI returned null");
 
-                        'NIMBUA_TSDF'    → Special/Hazardous waste:
-                            Expired medicines, e-waste (batteries, phone chargers, laptops,
-                            CFLs, tube lights, bulbs), chemicals, pesticide bottles, paint
-                            containers, broken thermometers, needles, syringes.
-                            This is toxic waste requiring special treatment.
+        // Remove <think>...</think> blocks which contain reasoning
+        if (raw.contains("<think>")) {
+            raw = raw.replaceAll("(?s)<think>.*?</think>", "");
+        }
 
-                        Set "facilityKey" to one of the four keys above.
-                        Set "category" to a short label e.g. "Wet Waste", "Dry Waste",
-                            "Hazardous", "Construction".
-                        Set "department" to "MOH" for wet waste, "Engineering" for dry/CD,
-                            "CPCC" for hazardous.
-                        Set "resourcePotential" to e.g. "Biogas + Organic Manure",
-                            "Recyclable Material", "RDF Fuel", "Special Treatment Required".
+        raw = raw.strip();
+        if (raw.startsWith("```json")) raw = raw.substring(7);
+        else if (raw.startsWith("```")) raw = raw.substring(3);
+        if (raw.endsWith("```"))
+            raw = raw.substring(0, raw.length() - 3);
+        raw = raw.strip();
 
-                        ═══════════════════════════════════════════════
-                        TASK 2 — 4-BIN COMPLIANCE CHECK (SWM Rules 2026)
-                        ═══════════════════════════════════════════════
-                        Chandigarh's 4-bin system under SWM Rules 2026:
+        // Fix missing closing brace
+        if (!raw.endsWith("}")) {
+            if (raw.endsWith(",")) {
+                raw = raw.substring(0, raw.length() - 1);
+            }
+            raw = raw + "\n}";
+        }
 
-                        GREEN bin  → ONLY: kitchen/organic/wet waste listed in Task 1 CBG.
-                                     Biodegradable. Used for composting/biogas.
+        int start = raw.indexOf("{");
+        int end = raw.lastIndexOf("}");
+        if (start != -1 && end != -1 && end > start) {
+            raw = raw.substring(start, end + 1);
+        }
 
-                        BLUE bin   → ONLY: dry recyclables listed in Task 1 RDF.
-                                     Must be clean/rinsed if soiled. Non-biodegradable.
+        return raw;
+    }
 
-                        RED bag    → ONLY: sanitary waste.
-                                     Diapers, sanitary pads, tampons, condoms, bandages,
-                                     cotton, used tissues, incontinence sheets.
-                                     CRITICAL RULE: All items MUST be wrapped or pouched
-                                     before placing in the red bag, as per SWM Rules 2026.
-                                     Loose/unwrapped sanitary items = hygiene violation.
+    private String buildPrompt() {
+        return """
+SYSTEM ROLE:
+You are a deterministic waste-bin image classifier for India's SWM Rules 2026.
 
-                        BLACK bin  → ONLY: domestic hazardous/special waste.
-                                     Expired medicines, e-waste (batteries, chargers,
-                                     bulbs, CFLs, tubes), chemicals, broken glass,
-                                     pesticide bottles, paint containers.
+OBJECTIVE:
+Analyze ONE uploaded image and return EXACTLY ONE valid JSON object.
 
-                        Evaluate the submitted image against these rules:
+OUTPUT REQUIREMENTS:
+- Output ONLY JSON.
+- No markdown.
+- No explanations.
+- No reasoning.
+- No extra text.
+- No code fences.
+- Every field is mandatory.
+- If a value cannot be determined, use the closest valid value and reduce confidence.
+- Confidence must be between 0.00 and 1.00.
 
-                        "detectedBinType"    → One of: GREEN, BLUE, RED, BLACK, UNKNOWN.
-                                               Set to UNKNOWN if no bin is visible or
-                                               bin color is indeterminate.
+CLASSIFICATION RULES
 
-                        "isCorrectBinType"   → true if the waste content matches
-                                               the bin's designated category.
-                                               false if wrong waste is in this bin type.
+GREEN BIN
+Waste:
+- Food waste
+- Vegetable waste
+- Fruit waste
+- Cooked food
+- Garden waste
+- Leaves
+- Organic waste
 
-                        "hasCrossContamination" → true if conflicting waste types are
-                                               visibly mixed. Examples:
-                                               - Plastic bottle in green bin
-                                               - Food waste in blue bin
-                                               - Medicine in green bin
-                                               false if waste appears correctly sorted.
+Return:
+category = "WET"
+department = "MOH"
+facilityKey = "DADUMAJRA_CBG"
 
-                        "contaminationDetail"→ If hasCrossContamination is true, describe
-                                               exactly what is wrong, e.g.
-                                               "Plastic packaging visible in wet waste bin."
-                                               Empty string "" if no contamination.
+--------------------------------
 
-                        "isProperlyWrapped"  → ONLY relevant for RED bin submissions.
-                                               true if sanitary items are wrapped/pouched.
-                                               false if items are loose/unwrapped.
-                                               For non-RED bins, always set to true.
+BLUE BIN
+Waste:
+- Paper
+- Cardboard
+- Plastic
+- Metal
+- Glass
+- Dry recyclable packaging
 
-                        ═══════════════════════════════════════════════
-                        TASK 3 — ANTI-FRAUD & AUTHENTICITY CHECKS
-                        ═══════════════════════════════════════════════
-                        Detect attempts to cheat the system:
+Return:
+category = "DRY"
+department = "Engineering"
+facilityKey = "DADUMAJRA_RDF"
 
-                        "isSuspicious" → Set to true if ANY of these apply:
-                            - Image appears to be a stock photo or downloaded from internet
-                            - Image is a screenshot of another photo
-                            - Image is too dark, blurry, or obscured to assess properly
-                            - Bin appears staged or artificially arranged
-                            - Background is clearly not a real Indian home/street environment
-                            false if the image appears to be a genuine real-time photo.
+--------------------------------
 
-                        "locationConsistency" → HIGH: background clearly shows Indian
-                                               residential/urban environment consistent
-                                               with Chandigarh or North India.
-                                               MEDIUM: environment is ambiguous but not
-                                               clearly foreign or fake.
-                                               LOW: background looks foreign, studio-shot,
-                                               or clearly inconsistent with India.
+RED BAG
+Waste:
+- Sanitary pads
+- Diapers
+- Bandages
+- Household biomedical waste
 
-                        ═══════════════════════════════════════════════
-                        TASK 4 — CONFIDENCE SCORING
-                        ═══════════════════════════════════════════════
-                        "confidence" → Score from 0.0 to 1.0 reflecting how certain you
-                                       are about your waste classification and bin assessment.
-                                       0.9+ = very clear image, obvious waste type
-                                       0.7-0.9 = reasonably clear, minor ambiguity
-                                       0.5-0.7 = unclear image or mixed waste signals
-                                       Below 0.5 = too unclear to assess reliably
+Return:
+category = "SANITARY"
+department = "CPCC"
+facilityKey = "NIMBUA_TSDF"
 
-                        ═══════════════════════════════════════════════
-                        TASK 5 — EMPTY BIN DETECTION
-                        ═══════════════════════════════════════════════
-                        "isEmpty" → true if the bin contains NO visible waste at all.
-                                    An empty bin photo is a cheating attempt —
-                                    AI confidence will be high (clearly a bin) but
-                                    there is nothing to verify segregation against.
-                                    false if ANY waste is visible inside the bin.
-                                    Note: even a small amount of correctly sorted
-                                    waste makes isEmpty = false.
+--------------------------------
 
-                        ═══════════════════════════════════════════════
-                        TASK 6 — GENERAL DESCRIPTION
-                        ═══════════════════════════════════════════════
-                        "aiDescription" → 1-2 sentences describing what you see in
-                                          the image and your compliance assessment.
-                                          Be specific and factual.
+BLACK BIN
+Waste:
+- Batteries
+- Paint
+- Chemicals
+- CFL
+- Tube lights
+- E-waste
+- Hazardous waste
 
-                        ═══════════════════════════════════════════════
-                        OUTPUT FORMAT — STRICTLY VALID JSON ONLY
-                        ═══════════════════════════════════════════════
-                        Return ONLY a valid JSON object. No preamble, no explanation,
-                        no markdown, no code blocks. Just the raw JSON.
+Return:
+category = "HAZARDOUS"
+department = "CPCC"
+facilityKey = "NIMBUA_TSDF"
 
-                        Required keys (all must be present):
-                        {
-                          "category": "",
-                          "department": "",
-                          "facilityKey": "",
-                          "resourcePotential": "",
-                          "confidence": 0.0,
-                          "locationConsistency": "",
-                          "isSuspicious": false,
-                          "aiDescription": "",
-                          "detectedBinType": "",
-                          "isCorrectBinType": false,
-                          "hasCrossContamination": false,
-                          "contaminationDetail": "",
-                          "isEmpty": false,
-                          "isProperlyWrapped": true
-                        }
-                        """)
-                        .media(MimeTypeUtils.IMAGE_JPEG, imageResource)
-                )
-                .call()
-                .entity(WasteAnalysis.class);
+VALIDATION RULES
+
+detectedBinType:
+Allowed values:
+GREEN
+BLUE
+RED
+BLACK
+UNKNOWN
+
+resourcePotential:
+HIGH
+MEDIUM
+LOW
+NONE
+
+locationConsistency:
+INDIA
+POSSIBLY_INDIA
+UNKNOWN
+NOT_INDIA
+
+isSuspicious = true if:
+- Screenshot
+- Stock photo
+- AI generated image
+- Edited image
+- Cartoon
+- Advertisement
+- No real waste bin
+- Clearly outside India
+
+Otherwise false.
+
+isEmpty = true if:
+- No visible waste inside the bin.
+
+Otherwise false.
+
+hasCrossContamination = true if:
+- Waste does not belong in the detected bin.
+
+Otherwise false.
+
+contaminationDetail:
+Short description.
+Empty string if none.
+
+isCorrectBinType:
+true only if waste matches detected bin.
+
+isProperlyWrapped:
+Applicable only for sanitary waste.
+true only if visibly wrapped.
+Otherwise false.
+
+aiDescription:
+Maximum 20 words.
+Describe only visible objects.
+Do not guess.
+
+Return EXACTLY this JSON:
+
+{
+  "category":"",
+  "department":"",
+  "facilityKey":"",
+  "resourcePotential":"",
+  "confidence":0.00,
+  "locationConsistency":"",
+  "isSuspicious":false,
+  "aiDescription":"",
+  "detectedBinType":"",
+  "isCorrectBinType":true,
+  "hasCrossContamination":false,
+  "contaminationDetail":"",
+  "isEmpty":false,
+  "isProperlyWrapped":false
+}
+""";
     }
 }

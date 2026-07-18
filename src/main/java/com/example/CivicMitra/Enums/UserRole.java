@@ -5,5 +5,6 @@ public enum UserRole {
     AUTHORITY,
     WORKER,
     MUNICIPAL_ADMIN,
+    MUNICIPALITY_PARTNER,
     SYSTEM_SUPER_ADMIN
 }

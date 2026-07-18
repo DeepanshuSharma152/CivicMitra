@@ -129,7 +129,7 @@ public class ComplaintService {
                 StandardCopyOption.REPLACE_EXISTING);
 
         byte[] imageBytes = image.getBytes();
-        WasteAnalysis aiResult = wasteAiService.analyzeWasteImage(imageBytes);
+        WasteAnalysis aiResult = wasteAiService.analyzeWasteImage(imageBytes,image.getOriginalFilename());
 
         // FIX: replaces ChandigarhFacility enum — lookup from DB
         TreatmentFacility facility = facilityRepository
