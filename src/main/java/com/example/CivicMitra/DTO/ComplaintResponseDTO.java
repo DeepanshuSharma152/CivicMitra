@@ -17,6 +17,7 @@ public class ComplaintResponseDTO {
     private Long userId;
     private String citizenEmail;
     private String location;          // from ward.sectorName
+    private Long wardId;
     private String municipalityName;  // from ward.municipality.name
     private String imagePath;
     private String category;          // joined from @ElementCollection
