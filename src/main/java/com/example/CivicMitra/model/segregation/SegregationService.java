@@ -6,11 +6,14 @@ import com.example.CivicMitra.Ai.service.WasteAiService;
 import com.example.CivicMitra.DTO.BinResultDTO;
 import com.example.CivicMitra.DTO.QRScanResponseDTO;
 import com.example.CivicMitra.DTO.SegregationResponseDTO;
+import com.example.CivicMitra.DTO.WorkerPickupActionDTO;
+import com.example.CivicMitra.DTO.WorkerScanDetailsDTO;
 import com.example.CivicMitra.Enums.BinType;
 import com.example.CivicMitra.Enums.SubmissionStatus;
 import com.example.CivicMitra.Repository.GreenQRTokenRepository;
 import com.example.CivicMitra.Repository.HouseholdRepository;
 import com.example.CivicMitra.Repository.SegregationRepository;
+import com.example.CivicMitra.Repository.UserRepository;
 import com.example.CivicMitra.Service.TrustService;
 
 import com.google.zxing.BarcodeFormat;
@@ -44,19 +47,22 @@ public class SegregationService {
     private final WasteAiService wasteAiService;
     private final SegregationScoringEngine scoringEngine;
     private final TrustService trustService;
+    private final UserRepository userRepository;
 
     public SegregationService(SegregationRepository segregationRepository,
                               HouseholdRepository householdRepository,
                               GreenQRTokenRepository qrTokenRepository,
                               WasteAiService wasteAiService,
                               SegregationScoringEngine scoringEngine,
-                              TrustService trustService) {
+                              TrustService trustService,
+                              UserRepository userRepository) {
         this.segregationRepository = segregationRepository;
         this.householdRepository = householdRepository;
         this.qrTokenRepository = qrTokenRepository;
         this.wasteAiService = wasteAiService;
         this.scoringEngine = scoringEngine;
         this.trustService = trustService;
+        this.userRepository = userRepository;
     }
 
     // ─────────────────────────────────────────────────────────
@@ -208,56 +214,133 @@ public class SegregationService {
             Double workerLat,
             Double workerLng) {
 
+        WorkerPickupActionDTO action = confirmPickup(tokenId, workerId, workerLat, workerLng);
+        return new QRScanResponseDTO(
+                action.getStatus(), action.getHouseNumber(), "PICKUP_COMPLETED".equals(action.getStatus()), action.getMessage());
+    }
+
+    @Transactional(readOnly = true)
+    public WorkerScanDetailsDTO scanQR(String tokenId, Double workerLat, Double workerLng) {
         GreenQRToken token = qrTokenRepository.findById(tokenId)
                 .orElseThrow(() -> new RuntimeException("QR token not found"));
+        WorkerScanDetailsDTO dto = new WorkerScanDetailsDTO();
+        dto.setTokenId(token.getToken());
+        dto.setHouseNumber(token.getHousehold().getHouseNumber());
 
-        // Check 1: already consumed?
-        if (token.isConsumed()) {
-            return new QRScanResponseDTO(
-                    "ALREADY_USED",
-                    token.getHousehold().getHouseNumber(),
-                    false,
-                    "This QR was already scanned.");
+        String validation = validationFailure(token, workerLat, workerLng);
+        if (validation != null) {
+            dto.setScanResult(validation);
+            dto.setMessage(validationMessage(validation, token, workerLat, workerLng));
+            return dto;
         }
 
-        // Check 2: expired?
-        if (LocalDateTime.now().isAfter(token.getExpiresAt())) {
-            return new QRScanResponseDTO(
-                    "EXPIRED",
-                    token.getHousehold().getHouseNumber(),
-                    false,
-                    "QR expired at " + token.getExpiresAt());
-        }
+        SegregationSubmission submission = token.getSubmission();
+        dto.setScanResult("VALID");
+        dto.setMessage("QR is valid and ready for doorstep verification.");
+        dto.setSubmissionId(submission.getId());
+        dto.setResidentName(token.getHousehold().getPrimaryResident() == null
+                ? "Resident" : token.getHousehold().getPrimaryResident().getFullName());
+        dto.setWard(token.getHousehold().getWard() == null ? "Assigned ward"
+                : "Ward " + token.getHousehold().getWard().getWardNumber());
+        dto.setOverallScore(submission.getOverallScore());
+        dto.setSubmittedAt(submission.getSubmittedAt());
+        dto.setExpiresAt(token.getExpiresAt());
+        dto.setBinResults(submission.getBinAnalyses().stream().map(bin -> {
+            BinResultDTO result = new BinResultDTO();
+            result.setBinType(bin.getExpectedBinType().name());
+            result.setPassed(bin.isPassed());
+            result.setAiConfidence(bin.getAiConfidence());
+            result.setContaminationDetail(bin.getContaminationDetail());
+            return result;
+        }).collect(Collectors.toList()));
+        return dto;
+    }
 
-        // Check 3: worker GPS near household?
-        // Stricter than citizen check — 50m, not 200m
-        Household household = token.getHousehold();
-        if (workerLat != null && household.getLat() != null) {
-            double dist = trustService.haversine(
-                    workerLat, workerLng,
-                    household.getLat(), household.getLng());
-            if (dist > 0.05) { // 50 metres
-                return new QRScanResponseDTO(
-                        "GPS_MISMATCH",
-                        household.getHouseNumber(),
-                        false,
-                        "Worker location too far from household (" +
-                                String.format("%.0fm", dist * 1000) + ").");
-            }
-        }
+    @Transactional
+    public WorkerPickupActionDTO confirmPickup(String tokenId, Long workerId, Double workerLat, Double workerLng) {
+        GreenQRToken token = qrTokenRepository.findById(tokenId)
+                .orElseThrow(() -> new RuntimeException("QR token not found"));
+        String validation = validationFailure(token, workerLat, workerLng);
+        if (validation != null) return action(validation, validationMessage(validation, token, workerLat, workerLng), token);
 
-        // All checks passed — consume the token
         token.setConsumed(true);
         token.setConsumedAt(LocalDateTime.now());
+        token.setConsumedByWorker(userRepository.findById(workerId)
+                .orElseThrow(() -> new RuntimeException("Worker account not found")));
         token.setWorkerScanLat(workerLat);
         token.setWorkerScanLng(workerLng);
         qrTokenRepository.save(token);
+        return action("PICKUP_COMPLETED", "Pickup recorded and the household has been marked compliant.", token);
+    }
 
-        return new QRScanResponseDTO(
-                "VALID",
-                household.getHouseNumber(),
-                true,
-                "Waste collected. Household marked compliant.");
+    @Transactional
+    public WorkerPickupActionDTO rejectPickup(
+            String tokenId, Long workerId, Double workerLat, Double workerLng,
+            String reason, String subReason, String remarks, List<MultipartFile> proofImages) throws IOException {
+        if (reason == null || reason.isBlank()) throw new RuntimeException("A rejection reason is required.");
+        if (proofImages == null || proofImages.isEmpty()) throw new RuntimeException("At least one proof photo is required.");
+        GreenQRToken token = qrTokenRepository.findById(tokenId)
+                .orElseThrow(() -> new RuntimeException("QR token not found"));
+        String validation = validationFailure(token, workerLat, workerLng);
+        if (validation != null) return action(validation, validationMessage(validation, token, workerLat, workerLng), token);
+
+        List<String> savedPaths = new ArrayList<>();
+        String uploadDir = "uploads/pickup-rejections/";
+        Files.createDirectories(Paths.get(uploadDir));
+        for (MultipartFile image : proofImages) {
+            if (image.isEmpty()) continue;
+            String safeName = image.getOriginalFilename() == null ? "proof" : image.getOriginalFilename().replaceAll("[^a-zA-Z0-9._-]", "_");
+            String fileName = UUID.randomUUID() + "_" + safeName;
+            Files.copy(image.getInputStream(), Paths.get(uploadDir + fileName), StandardCopyOption.REPLACE_EXISTING);
+            savedPaths.add("pickup-rejections/" + fileName);
+        }
+        if (savedPaths.isEmpty()) throw new RuntimeException("At least one valid proof photo is required.");
+
+        token.setConsumed(true);
+        token.setRejected(true);
+        token.setRejectedAt(LocalDateTime.now());
+        token.setConsumedByWorker(userRepository.findById(workerId)
+                .orElseThrow(() -> new RuntimeException("Worker account not found")));
+        token.setWorkerScanLat(workerLat);
+        token.setWorkerScanLng(workerLng);
+        token.setRejectionReason(reason.trim());
+        token.setRejectionSubReason(subReason == null ? null : subReason.trim());
+        token.setRejectionRemarks(remarks == null ? null : remarks.trim());
+        token.setRejectionProofPaths(String.join(",", savedPaths));
+        token.getSubmission().setStatus(SubmissionStatus.PICKUP_REJECTED);
+        token.getSubmission().setFailureReason(reason.trim());
+        qrTokenRepository.save(token);
+        return action("PICKUP_REJECTED", "Submission rejected with evidence and sent for authority review.", token);
+    }
+
+    private String validationFailure(GreenQRToken token, Double workerLat, Double workerLng) {
+        if (token.isConsumed()) return token.isRejected() ? "ALREADY_REJECTED" : "ALREADY_USED";
+        if (LocalDateTime.now().isAfter(token.getExpiresAt())) return "EXPIRED";
+        Household household = token.getHousehold();
+        if (workerLat != null && workerLng != null && household.getLat() != null && household.getLng() != null) {
+            double distance = trustService.haversine(workerLat, workerLng, household.getLat(), household.getLng());
+            if (distance > 0.05) return "GPS_MISMATCH";
+        }
+        return null;
+    }
+
+    private String validationMessage(String status, GreenQRToken token, Double workerLat, Double workerLng) {
+        return switch (status) {
+            case "ALREADY_REJECTED" -> "This submission has already been rejected and sent for review.";
+            case "ALREADY_USED" -> "This QR has already been used for collection.";
+            case "EXPIRED" -> "This QR expired at " + token.getExpiresAt() + ".";
+            case "GPS_MISMATCH" -> "You need to be within 50 metres of the household to validate this pickup.";
+            default -> "This QR cannot be verified right now.";
+        };
+    }
+
+    private WorkerPickupActionDTO action(String status, String message, GreenQRToken token) {
+        WorkerPickupActionDTO dto = new WorkerPickupActionDTO();
+        dto.setStatus(status);
+        dto.setMessage(message);
+        dto.setHouseNumber(token.getHousehold().getHouseNumber());
+        dto.setCompletedAt(LocalDateTime.now());
+        return dto;
     }
 
     // ─────────────────────────────────────────────────────────

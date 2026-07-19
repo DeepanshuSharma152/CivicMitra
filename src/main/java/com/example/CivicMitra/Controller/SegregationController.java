@@ -3,6 +3,8 @@ package com.example.CivicMitra.Controller;
 
 import com.example.CivicMitra.DTO.QRScanResponseDTO;
 import com.example.CivicMitra.DTO.SegregationResponseDTO;
+import com.example.CivicMitra.DTO.WorkerPickupActionDTO;
+import com.example.CivicMitra.DTO.WorkerScanDetailsDTO;
 import com.example.CivicMitra.model.segregation.SegregationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -72,6 +74,39 @@ public class SegregationController {
             return ResponseEntity.status(500).body(null);
         }
     }
+
+    @PostMapping("/scan-qr")
+    public ResponseEntity<WorkerScanDetailsDTO> scanQR(
+            @RequestParam("tokenId") String tokenId,
+            @RequestParam("workerLat") double workerLat,
+            @RequestParam("workerLng") double workerLng
+    ) {
+        return ResponseEntity.ok(segregationService.scanQR(tokenId, workerLat, workerLng));
     }
 
+    @PostMapping("/confirm-pickup")
+    public ResponseEntity<WorkerPickupActionDTO> confirmPickup(
+            @RequestParam("tokenId") String tokenId,
+            @RequestParam("workerId") Long workerId,
+            @RequestParam("workerLat") double workerLat,
+            @RequestParam("workerLng") double workerLng
+    ) {
+        return ResponseEntity.ok(segregationService.confirmPickup(tokenId, workerId, workerLat, workerLng));
+    }
+
+    @PostMapping(value = "/reject-pickup", consumes = "multipart/form-data")
+    public ResponseEntity<WorkerPickupActionDTO> rejectPickup(
+            @RequestParam("tokenId") String tokenId,
+            @RequestParam("workerId") Long workerId,
+            @RequestParam("workerLat") double workerLat,
+            @RequestParam("workerLng") double workerLng,
+            @RequestParam("reason") String reason,
+            @RequestParam(value = "subReason", required = false) String subReason,
+            @RequestParam(value = "remarks", required = false) String remarks,
+            @RequestParam(value = "proofImages", required = false) List<MultipartFile> proofImages
+    ) throws Exception {
+        return ResponseEntity.ok(segregationService.rejectPickup(
+                tokenId, workerId, workerLat, workerLng, reason, subReason, remarks, proofImages));
+    }
+    }
 

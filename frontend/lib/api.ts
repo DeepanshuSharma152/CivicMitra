@@ -1,5 +1,5 @@
 import { readSession } from "./session";
-import type { Complaint, Profile, Submission, UserRole } from "./types";
+import type { Complaint, Profile, Submission, UserRole, WorkerPickupAction, WorkerScanDetails } from "./types";
 
 const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -24,5 +24,8 @@ export const api = {
   createComplaint: (body: FormData) => request<Complaint>("/api/v1/complaints", { method: "POST", body }),
   allComplaints: () => request<Complaint[]>("/api/v1/complaints"),
   updateComplaintStatus: (id: number, status: string) => request<Complaint>(`/api/v1/complaints/${id}/status?status=${encodeURIComponent(status)}`, { method: "PATCH" }),
-  verifyQr: (tokenId: string, workerId: number, workerLat: number, workerLng: number) => request<{ scanResult: string; houseNumber: string; collected: boolean; message: string }>(`/api/v1/segregation/verify-qr?tokenId=${encodeURIComponent(tokenId)}&workerId=${workerId}&workerLat=${workerLat}&workerLng=${workerLng}`, { method: "POST" })
+  verifyQr: (tokenId: string, workerId: number, workerLat: number, workerLng: number) => request<{ scanResult: string; houseNumber: string; collected: boolean; message: string }>(`/api/v1/segregation/verify-qr?tokenId=${encodeURIComponent(tokenId)}&workerId=${workerId}&workerLat=${workerLat}&workerLng=${workerLng}`, { method: "POST" }),
+  scanQr: (tokenId: string, workerLat: number, workerLng: number) => request<WorkerScanDetails>(`/api/v1/segregation/scan-qr?tokenId=${encodeURIComponent(tokenId)}&workerLat=${workerLat}&workerLng=${workerLng}`, { method: "POST" }),
+  confirmPickup: (tokenId: string, workerId: number, workerLat: number, workerLng: number) => request<WorkerPickupAction>(`/api/v1/segregation/confirm-pickup?tokenId=${encodeURIComponent(tokenId)}&workerId=${workerId}&workerLat=${workerLat}&workerLng=${workerLng}`, { method: "POST" }),
+  rejectPickup: (body: FormData) => request<WorkerPickupAction>("/api/v1/segregation/reject-pickup", { method: "POST", body })
 };
