@@ -8,6 +8,8 @@ import com.example.CivicMitra.DTO.QRScanResponseDTO;
 import com.example.CivicMitra.DTO.SegregationResponseDTO;
 import com.example.CivicMitra.DTO.WorkerPickupActionDTO;
 import com.example.CivicMitra.DTO.WorkerScanDetailsDTO;
+import com.example.CivicMitra.DTO.WorkerStopDTO;
+import com.example.CivicMitra.DTO.WorkerHistoryDTO;
 import com.example.CivicMitra.Enums.BinType;
 import com.example.CivicMitra.Enums.SubmissionStatus;
 import com.example.CivicMitra.Repository.GreenQRTokenRepository;
@@ -341,6 +343,44 @@ public class SegregationService {
         dto.setHouseNumber(token.getHousehold().getHouseNumber());
         dto.setCompletedAt(LocalDateTime.now());
         return dto;
+    }
+
+    @Transactional(readOnly = true)
+    public List<WorkerStopDTO> getWorkerStops(Long workerId) {
+        var worker = userRepository.findById(workerId)
+                .orElseThrow(() -> new RuntimeException("Worker account not found"));
+        if (worker.getWard() == null) return List.of();
+        return qrTokenRepository.findByHousehold_Ward_WardIdAndIsConsumedFalseOrderByExpiresAtAsc(worker.getWard().getWardId())
+                .stream()
+                .filter(token -> !LocalDateTime.now().isAfter(token.getExpiresAt()))
+                .map(token -> {
+                    WorkerStopDTO dto = new WorkerStopDTO();
+                    dto.setTokenId(token.getToken());
+                    dto.setSubmissionId(token.getSubmission().getId());
+                    dto.setResidentName(token.getHousehold().getPrimaryResident() == null ? "Resident" : token.getHousehold().getPrimaryResident().getFullName());
+                    dto.setHouseNumber(token.getHousehold().getHouseNumber());
+                    dto.setWard("Ward " + worker.getWard().getWardNumber());
+                    dto.setOverallScore(token.getSubmission().getOverallScore());
+                    dto.setExpiresAt(token.getExpiresAt());
+                    return dto;
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<WorkerHistoryDTO> getWorkerHistory(Long workerId) {
+        return qrTokenRepository.findByConsumedByWorker_IdOrderByConsumedAtDesc(workerId)
+                .stream()
+                .map(token -> {
+                    WorkerHistoryDTO dto = new WorkerHistoryDTO();
+                    dto.setTokenId(token.getToken());
+                    dto.setHouseNumber(token.getHousehold().getHouseNumber());
+                    dto.setOutcome(token.isRejected() ? "REJECTED" : "COMPLETED");
+                    dto.setRejectionReason(token.getRejectionReason());
+                    dto.setCompletedAt(token.isRejected() ? token.getRejectedAt() : token.getConsumedAt());
+                    return dto;
+                })
+                .collect(Collectors.toList());
     }
 
     // ─────────────────────────────────────────────────────────

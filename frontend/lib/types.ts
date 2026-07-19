@@ -21,3 +21,5 @@ export interface WorkerScanDetails {
   binResults: BinResult[];
 }
 export interface WorkerPickupAction { status: string; message: string; houseNumber: string; completedAt: string; }
+export interface WorkerStop { tokenId: string; submissionId: number; residentName: string; houseNumber: string; ward: string; overallScore: number; expiresAt: string; }
+export interface WorkerHistory { tokenId: string; houseNumber: string; outcome: "COMPLETED" | "REJECTED"; rejectionReason?: string | null; completedAt?: string | null; }

@@ -5,6 +5,8 @@ import com.example.CivicMitra.DTO.QRScanResponseDTO;
 import com.example.CivicMitra.DTO.SegregationResponseDTO;
 import com.example.CivicMitra.DTO.WorkerPickupActionDTO;
 import com.example.CivicMitra.DTO.WorkerScanDetailsDTO;
+import com.example.CivicMitra.DTO.WorkerStopDTO;
+import com.example.CivicMitra.DTO.WorkerHistoryDTO;
 import com.example.CivicMitra.model.segregation.SegregationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -108,5 +110,14 @@ public class SegregationController {
         return ResponseEntity.ok(segregationService.rejectPickup(
                 tokenId, workerId, workerLat, workerLng, reason, subReason, remarks, proofImages));
     }
+
+    @GetMapping("/worker-stops/{workerId}")
+    public ResponseEntity<List<WorkerStopDTO>> workerStops(@PathVariable Long workerId) {
+        return ResponseEntity.ok(segregationService.getWorkerStops(workerId));
     }
 
+    @GetMapping("/worker-history/{workerId}")
+    public ResponseEntity<List<WorkerHistoryDTO>> workerHistory(@PathVariable Long workerId) {
+        return ResponseEntity.ok(segregationService.getWorkerHistory(workerId));
+    }
+    }
