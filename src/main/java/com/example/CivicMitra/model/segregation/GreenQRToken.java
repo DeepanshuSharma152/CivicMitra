@@ -41,4 +41,15 @@ public class GreenQRToken {
     // GPS of worker at scan time — anti-fraud
     private Double workerScanLat;
     private Double workerScanLng;
+
+    private boolean rejected = false;
+    private LocalDateTime rejectedAt;
+    private String rejectionReason;
+    private String rejectionSubReason;
+
+    @Column(columnDefinition = "TEXT")
+    private String rejectionRemarks;
+
+    @Column(columnDefinition = "TEXT")
+    private String rejectionProofPaths;
 }

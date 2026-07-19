@@ -33,6 +33,20 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .csrf(csrf-> csrf.disable())
                 .authorizeHttpRequests(auth-> auth
+                        .requestMatchers(
+                                "/",
+                                "/dashboard",
+                                "/auth-home.css",
+                                "/auth-home.js",
+                                "/dashboard.css",
+                                "/dashboard.js",
+                                "/civicmitra.css",
+                                "/civicmitra-refined.css",
+                                "/civicmitra-reports.css",
+                                "/civicmitra.js",
+                                "/civicmitra-complaints.js",
+                                "/images/**"
+                        ).permitAll()
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("AUTHORITY")
