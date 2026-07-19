@@ -30,7 +30,8 @@ public class DataSeeder implements CommandLineRunner {
             // 2. Create the Root Municipality
             Municipality chandigarh = new Municipality();
             chandigarh.setName("Chandigarh Municipal Corporation");
-            // Add any other required fields for your Municipality entity here
+            chandigarh.setSlug("chandigarh-municipal-corporation");
+            chandigarh.setState("Chandigarh");
 
             // Save it so it gets ID: 1
             chandigarh = municipalityRepository.save(chandigarh);
@@ -40,7 +41,8 @@ public class DataSeeder implements CommandLineRunner {
             Ward sector17 = new Ward();
             sector17.setWardNumber(1); // Assuming Ward number 1 for Sector 17
             sector17.setMunicipality(chandigarh);
-            // Add any other required fields for your Ward entity here
+            sector17.setSectorName("Sector 17");
+            sector17.setZone("Central");
 
             // Save it so it gets ID: 1
             wardRepository.save(sector17);

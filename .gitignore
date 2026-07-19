@@ -14,3 +14,7 @@ application-local.properties
 .env
 .env.*
 !.env.example
+
+# Next.js build artifacts and local packages
+frontend/node_modules/
+frontend/.next/

@@ -35,6 +35,11 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth-> auth
                         .requestMatchers(
                                 "/",
+                                "/dashboard",
+                                "/auth-home.css",
+                                "/auth-home.js",
+                                "/dashboard.css",
+                                "/dashboard.js",
                                 "/civicmitra.css",
                                 "/civicmitra-refined.css",
                                 "/civicmitra-reports.css",
