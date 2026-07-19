@@ -18,3 +18,4 @@ application-local.properties
 # Next.js build artifacts and local packages
 frontend/node_modules/
 frontend/.next/
+.playwright-cli/
