@@ -71,6 +71,7 @@ public class ComplaintService {
 
         // FIX: location is no longer a String on Complaint — traverse Ward
         if (complaint.getWard() != null) {
+            dto.setWardId(complaint.getWard().getWardId());
             dto.setLocation(complaint.getWard().getSectorName());
             if (complaint.getWard().getMunicipality() != null) {
                 dto.setMunicipalityName(
@@ -140,14 +141,6 @@ public class ComplaintService {
                     return null;
                 });
 
-        int initialTrustScore = trustService.calculateTrustScore(
-                aiResult,
-                dto.getDeviceLat(),
-                dto.getDeviceLng(),
-                user.getReputationScore(),
-                0,
-                null);
-
         Complaint complaint = new Complaint();
         complaint.setUser(user);
         complaint.setWard(ward);                 // FK — not a string
@@ -169,11 +162,19 @@ public class ComplaintService {
         metadata.setDeviceLng(dto.getDeviceLng());
         metadata.setReportedLat(dto.getReportedLat());
         metadata.setReportedLng(dto.getReportedLng());
-        metadata.setTrustScore(initialTrustScore);
         metadata.setAiConfidence(aiResult.confidence());
         metadata.setLocationConsistency(aiResult.locationConsistency());
         metadata.setAiSuspicious(aiResult.isSuspicious());
         metadata.setAiDescription(aiResult.aiDescription());
+
+        int initialTrustScore = trustService.calculateTrustScore(
+                aiResult,
+                dto.getDeviceLat(),
+                dto.getDeviceLng(),
+                user.getReputationScore(),
+                0,
+                metadata);
+        metadata.setTrustScore(initialTrustScore);
         complaint.setMetadata(metadata);
 
         // FIX: AuditLog instead of appending string to description

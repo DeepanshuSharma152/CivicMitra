@@ -31,26 +31,27 @@ public class BinAnalysis {
     private String imagePath;
     private double aiConfidence;
 
-    // Renamed from "isCorrectBinType" → Lombok will generate isCorrectBinType() getter
+    // Explicit column names to match the DB schema (columns were created with is_ prefix)
+    @Column(name = "is_correct_bin_type", nullable = false)
     private boolean correctBinType;
 
-    // Renamed from "hasCrossContamination" → no change needed (no "is" prefix)
+    @Column(name = "has_cross_contamination", nullable = false)
     private boolean hasCrossContamination;
 
     @Column(columnDefinition = "TEXT")
     private String contaminationDetail;
 
-    // Renamed from "isSuspicious" → Lombok will generate isSuspicious() getter
+    @Column(name = "is_suspicious", nullable = false)
     private boolean suspicious;
 
-    // Renamed from "isEmpty" → Lombok will generate isEmpty() getter
-    @Column(name = "is_empty")
+    @Column(name = "is_empty", nullable = false)
     private boolean empty;
 
     // did this bin pass?
+    @Column(nullable = false)
     private boolean passed;
 
-    // Renamed from "isProperlyWrapped" → Lombok will generate isProperlyWrapped() getter
     // Only relevant for RED bin
+    @Column(name = "is_properly_wrapped", nullable = false)
     private boolean properlyWrapped;
 }

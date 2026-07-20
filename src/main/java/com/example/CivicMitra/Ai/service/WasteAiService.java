@@ -3,390 +3,196 @@ package com.example.CivicMitra.Ai.service;
 import com.example.CivicMitra.Ai.response.WasteAnalysis;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.http.*;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.List;
+import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Calls OpenRouter's OpenAI-compatible API for waste image analysis.
+ * Uses google/gemini-2.0-flash-exp:free — free vision model, no thinking-mode overhead.
+ *
+ * OpenRouter aggregates many models under one API key and one endpoint,
+ * with generous free tiers and no per-minute token limits for low-traffic apps.
+ * Sign up and get a free key at: https://openrouter.ai
+ */
 @Service
 public class WasteAiService {
 
-    @org.springframework.beans.factory.annotation.Value("${groq.api.key}")
-    private String apiKey;
+    private static final Logger log = LoggerFactory.getLogger(WasteAiService.class);
+
+    private static final String OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+    /**
+     * Free vision models tried in order. If one is rate-limited (429), the next is tried.
+     * All use different upstream providers so rate limits are independent.
+     */
+    private static final List<String> MODELS = Arrays.asList(
+        "nvidia/nemotron-nano-12b-v2-vl:free",   // NVIDIA backend
+        "google/gemma-4-31b-it:free",              // Google AI Studio backend
+        "google/gemma-4-26b-a4b-it:free"           // Google AI Studio backend (alt)
+    );
+
+    private static final String WASTE_ANALYSIS_PROMPT = """
+            You are a municipal solid-waste compliance auditor for Chandigarh.
+            Inspect the image carefully and return one valid JSON object only.
+            Do not include markdown, comments, extra keys, or explanatory text.
+
+            Audit checklist:
+            1. Identify visible waste materials, bin/bag color, and whether any waste is present.
+            2. Route the primary waste stream to the correct facility.
+            3. Check whether the waste belongs in the detected bin type.
+            4. Check for cross-contamination, fraud/suspicious image signs, and image clarity.
+            5. For RED sanitary waste, verify items are wrapped or pouched.
+            6. If uncertain, use UNKNOWN/false conservatively and lower confidence.
+
+            Facility routing:
+            - Wet/organic: food scraps, peels, cooked food, flowers, garden waste -> DADUMAJRA_CBG, Wet Waste, MOH, Biogas + Organic Manure
+            - Dry recyclable: plastic, paper, cardboard, glass, metal, rubber, wood, textile -> DADUMAJRA_RDF, Dry Waste, Engineering, Recyclable Material
+            - Construction: brick, concrete, tile, sand, gravel, debris -> SECTOR_25_CD, Construction, Engineering, C&D Recycling
+            - Hazardous/special: medicines, e-waste, batteries, bulbs/CFLs, chemicals, paint, pesticide containers, sharps -> NIMBUA_TSDF, Hazardous, CPCC, Special Treatment Required
+
+            Bin compliance:
+            - GREEN allows wet/organic only.
+            - BLUE allows clean dry recyclables only.
+            - RED allows sanitary waste only; loose/unwrapped sanitary waste is non-compliant.
+            - BLACK allows domestic hazardous/special waste only.
+
+            Field rules:
+            - detectedBinType: GREEN, BLUE, RED, BLACK, or UNKNOWN if no bin/bag color is clear.
+            - isCorrectBinType: true only when visible waste matches the bin rule; false for mismatch or insufficient visual evidence.
+            - hasCrossContamination: true when incompatible waste categories are mixed; contaminationDetail must name the issue, otherwise empty string.
+            - isEmpty: true only when no waste is visible inside the bin/bag.
+            - isSuspicious: true for stock/downloaded/screenshot images, staged scenes, unusable blur/darkness, heavy obstruction, or clearly non-local setting.
+            - locationConsistency: HIGH for clearly Indian/North Indian residential/street context, MEDIUM for ambiguous, LOW for clearly inconsistent.
+            - confidence: 0.0-1.0 based on visual certainty; reduce for blur, partial views, poor lighting, mixed contents, or unclear bin color.
+            - aiDescription: one concise sentence naming the visible waste, bin type, and compliance concern if any.
+
+            Required JSON schema (return this exact structure, no extra keys):
+            {
+              "category": "",
+              "department": "",
+              "facilityKey": "",
+              "resourcePotential": "",
+              "confidence": 0.0,
+              "locationConsistency": "",
+              "isSuspicious": false,
+              "aiDescription": "",
+              "detectedBinType": "",
+              "isCorrectBinType": false,
+              "hasCrossContamination": false,
+              "contaminationDetail": "",
+              "isEmpty": false,
+              "isProperlyWrapped": true
+            }
+            """;
+
+    @Value("${openrouter.api.key}")
+    private String openRouterApiKey;
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private static final String GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-
     public WasteAnalysis analyzeWasteImage(byte[] imageBytes, String originalFilename) {
-        System.out.println("DEBUG: Sending image to Groq, original bytes: " + imageBytes.length);
+        String base64Image = Base64.getEncoder().encodeToString(imageBytes);
 
-        // Compress image to save tokens and prevent "invalid image data" errors from large resolutions
-        imageBytes = compressImage(imageBytes);
-        System.out.println("DEBUG: Compressed image bytes: " + imageBytes.length);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(openRouterApiKey);
+        headers.set("HTTP-Referer", "https://civicmitra.app");
+        headers.set("X-Title", "CivicMitra Waste Auditor");
 
-        // Step 1 — base64 encode
-        String base64 = Base64.getEncoder().encodeToString(imageBytes);
-        String mime = "image/jpeg"; // compressImage always returns jpeg
+        Exception lastException = null;
 
-        // Step 2 — build request body for Groq API (OpenAI compatible format)
-        Map<String, Object> textContent = Map.of(
-            "type", "text",
-            "text", buildPrompt()
+        for (String model : MODELS) {
+            try {
+                log.info("Trying vision model: {}", model);
+                WasteAnalysis result = callModel(model, base64Image, headers);
+                log.info("Success with model: {}", model);
+                return result;
+            } catch (Exception e) {
+                String msg = e.getMessage() != null ? e.getMessage() : "";
+                if (msg.contains("429") || msg.contains("rate") || msg.contains("Rate") || msg.contains("quota")) {
+                    log.warn("Model {} rate-limited, trying next. Reason: {}", model, msg);
+                    lastException = e;
+                } else {
+                    // Non-rate-limit error (bad JSON, 4xx other than 429, etc.) — fail fast
+                    throw new RuntimeException("Vision analysis failed with model " + model + ": " + e.getMessage(), e);
+                }
+            }
+        }
+
+        throw new RuntimeException(
+            "All vision models are rate-limited. Please wait a minute and retry. Last error: " +
+            (lastException != null ? lastException.getMessage() : "unknown"), lastException
         );
-        Map<String, Object> imageContent = Map.of(
-            "type", "image_url",
-            "image_url", Map.of(
-                "url", "data:" + mime + ";base64," + base64
+    }
+
+    private WasteAnalysis callModel(String model, String base64Image, HttpHeaders headers) throws Exception {
+        // OpenRouter uses the standard OpenAI chat-completions format with image_url content parts.
+        Map<String, Object> requestBody = Map.of(
+            "model", model,
+            "temperature", 0.1,
+            "max_tokens", 1024,
+            "messages", List.of(
+                Map.of("role", "user",
+                       "content", List.of(
+                           Map.of("type", "text",
+                                  "text", WASTE_ANALYSIS_PROMPT),
+                           Map.of("type", "image_url",
+                                  "image_url", Map.of(
+                                      "url", "data:image/jpeg;base64," + base64Image
+                                  ))
+                       ))
             )
         );
 
-        Map<String, Object> message = Map.of(
-            "role", "user",
-            "content", List.of(textContent, imageContent)
+        ResponseEntity<String> response = restTemplate.exchange(
+            OPENROUTER_URL, HttpMethod.POST,
+            new HttpEntity<>(requestBody, headers),
+            String.class
         );
 
-        // Use HashMap (not Map.of) so we can add reasoning_effort to disable thinking.
-        // Disabling thinking saves ~1700 completion tokens per call, keeping us under TPM limit.
-        Map<String, Object> requestBody = new java.util.HashMap<>();
-        requestBody.put("model", "qwen/qwen3.6-27b");
-        requestBody.put("messages", List.of(message));
-        requestBody.put("temperature", 0.1);
-        requestBody.put("reasoning_effort", "none"); // Disable chain-of-thought to save tokens
+        // Parse standard OpenAI response envelope: choices[0].message.content
+        JsonNode root = objectMapper.readTree(response.getBody());
+        String raw = root
+            .path("choices").get(0)
+            .path("message")
+            .path("content")
+            .asText();
 
-        // Step 3 — set headers
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(apiKey);
-
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-
-        // Step 4 — call Groq directly with retry
-        int maxRetries = 3;
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                ResponseEntity<String> response = restTemplate.postForEntity(
-                        GROQ_URL, entity, String.class);
-
-                System.out.println("DEBUG: Groq status: " + response.getStatusCode());
-
-                String body = response.getBody();
-                System.out.println("DEBUG: Groq raw response: " + body);
-
-                // Step 5 — extract content from OpenAI format
-                JsonNode root = objectMapper.readTree(body);
-                String rawContent = root
-                        .path("choices")
-                        .path(0)
-                        .path("message")
-                        .path("content")
-                        .asText();
-
-                System.out.println("DEBUG: AI content: " + rawContent);
-
-                // Step 6 — clean (if needed) and parse JSON
-                rawContent = cleanJson(rawContent);
-
-                return objectMapper.readValue(rawContent, WasteAnalysis.class);
-
-            } catch (Exception e) {
-                System.err.println("ERROR calling Groq (Attempt " + attempt + "): " + e.getMessage());
-
-                // Do NOT retry on image format errors — they will never recover
-                if (e.getMessage() != null && e.getMessage().contains("invalid image data")) {
-                    throw new RuntimeException(
-                        "Unsupported or corrupt image. Please upload a JPEG, PNG, or WebP photo.", e);
-                }
-
-                if (attempt == maxRetries) {
-                    throw new RuntimeException(
-                            "Failed to get AI analysis after " + maxRetries + " attempts: " + e.getMessage(), e);
-                }
-                try {
-                    long sleepMs = 2000L * attempt;
-                    // Check if there is a "Please try again in X.Xs" message
-                    if (e.getMessage() != null && e.getMessage().contains("Please try again in ")) {
-                        String msg = e.getMessage();
-                        int start = msg.indexOf("Please try again in ") + 20;
-                        int end = msg.indexOf("s.", start);
-                        if (start != -1 && end != -1) {
-                            try {
-                                double seconds = Double.parseDouble(msg.substring(start, end));
-                                sleepMs = (long) (seconds * 1000) + 1500; // wait extra 1.5 secs to be safe
-                                System.out.println("DEBUG: Extracted wait time, sleeping for " + sleepMs + " ms");
-                            } catch (NumberFormatException nfe) {
-                                sleepMs = 21000L; // Fallback
-                            }
-                        } else {
-                            sleepMs = 21000L;
-                        }
-                    } else if (e.getMessage() != null && e.getMessage().contains("429 Too Many Requests")) {
-                        sleepMs = 21000L;
-                    }
-                    Thread.sleep(sleepMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("Thread interrupted during retry backoff", ie);
-                }
-            }
-        }
-        throw new RuntimeException("Failed to get AI analysis");
+        return objectMapper.readValue(cleanJson(raw), WasteAnalysis.class);
     }
 
-    private byte[] compressImage(byte[] originalImage) {
-        int maxDim = 384; // Smaller target = fewer tokens per API call
-        try {
-            java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(originalImage);
-            java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(bais);
-
-            if (image == null) {
-                // ImageIO can't decode the format (e.g. HEIC/WEBP).
-                // Wrap bytes in a placeholder RGB image so we can still output a valid JPEG.
-                System.out.println("DEBUG: ImageIO could not read format; forcing JPEG re-encode at " + maxDim + "px");
-                // Decode via Toolkit as a last resort
-                java.awt.Image awtImage = java.awt.Toolkit.getDefaultToolkit().createImage(originalImage);
-                java.awt.MediaTracker tracker = new java.awt.MediaTracker(new java.awt.Container());
-                tracker.addImage(awtImage, 0);
-                tracker.waitForAll();
-                int w = awtImage.getWidth(null);
-                int h = awtImage.getHeight(null);
-                if (w <= 0 || h <= 0) {
-                    throw new RuntimeException(
-                        "Image format not supported. Please upload a JPEG, PNG, or WebP image.");
-                }
-                image = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_RGB);
-                java.awt.Graphics2D g = image.createGraphics();
-                g.drawImage(awtImage, 0, 0, null);
-                g.dispose();
-            }
-
-            int width = image.getWidth();
-            int height = image.getHeight();
-            double scale = Math.min(1.0, Math.min((double) maxDim / width, (double) maxDim / height));
-            int newWidth  = Math.max(1, (int) (width  * scale));
-            int newHeight = Math.max(1, (int) (height * scale));
-
-            java.awt.image.BufferedImage resized = new java.awt.image.BufferedImage(newWidth, newHeight, java.awt.image.BufferedImage.TYPE_INT_RGB);
-            java.awt.Graphics2D g2d = resized.createGraphics();
-            g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            g2d.drawImage(image, 0, 0, newWidth, newHeight, null);
-            g2d.dispose();
-
-            // Write with explicit quality (0.80) to control output size
-            javax.imageio.ImageWriter writer = javax.imageio.ImageIO.getImageWritersByFormatName("jpeg").next();
-            javax.imageio.plugins.jpeg.JPEGImageWriteParam params = new javax.imageio.plugins.jpeg.JPEGImageWriteParam(null);
-            params.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
-            params.setCompressionQuality(0.80f);
-            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            writer.setOutput(javax.imageio.ImageIO.createImageOutputStream(baos));
-            writer.write(null, new javax.imageio.IIOImage(resized, null, null), params);
-            writer.dispose();
-
-            System.out.println("DEBUG: Compressed " + width + "x" + height + " -> " + newWidth + "x" + newHeight
-                    + " JPEG, " + baos.size() + " bytes");
-            return baos.toByteArray();
-        } catch (Exception e) {
-            System.err.println("Error compressing image: " + e.getMessage());
-            return originalImage;
-        }
-    }
-
+    /**
+     * Strips optional markdown code fences and extracts the first valid JSON object.
+     */
     private String cleanJson(String raw) {
-        if (raw == null) throw new RuntimeException("AI returned null");
-
-        // Remove <think>...</think> blocks which contain reasoning
-        if (raw.contains("<think>")) {
-            raw = raw.replaceAll("(?s)<think>.*?</think>", "");
-        }
+        if (raw == null || raw.isBlank())
+            throw new RuntimeException("OpenRouter returned empty content");
 
         raw = raw.strip();
+
         if (raw.startsWith("```json")) raw = raw.substring(7);
         else if (raw.startsWith("```")) raw = raw.substring(3);
-        if (raw.endsWith("```"))
-            raw = raw.substring(0, raw.length() - 3);
+        if (raw.endsWith("```")) raw = raw.substring(0, raw.length() - 3);
+
         raw = raw.strip();
 
-        // Fix missing closing brace
-        if (!raw.endsWith("}")) {
-            if (raw.endsWith(",")) {
-                raw = raw.substring(0, raw.length() - 1);
-            }
-            raw = raw + "\n}";
-        }
-
         int start = raw.indexOf("{");
-        int end = raw.lastIndexOf("}");
+        int end   = raw.lastIndexOf("}");
         if (start != -1 && end != -1 && end > start) {
             raw = raw.substring(start, end + 1);
         }
 
         return raw;
-    }
-
-    private String buildPrompt() {
-        return """
-SYSTEM ROLE:
-You are a deterministic waste-bin image classifier for India's SWM Rules 2026.
-
-OBJECTIVE:
-Analyze ONE uploaded image and return EXACTLY ONE valid JSON object.
-
-OUTPUT REQUIREMENTS:
-- Output ONLY JSON.
-- No markdown.
-- No explanations.
-- No reasoning.
-- No extra text.
-- No code fences.
-- Every field is mandatory.
-- If a value cannot be determined, use the closest valid value and reduce confidence.
-- Confidence must be between 0.00 and 1.00.
-
-CLASSIFICATION RULES
-
-GREEN BIN
-Waste:
-- Food waste
-- Vegetable waste
-- Fruit waste
-- Cooked food
-- Garden waste
-- Leaves
-- Organic waste
-
-Return:
-category = "WET"
-department = "MOH"
-facilityKey = "DADUMAJRA_CBG"
-
---------------------------------
-
-BLUE BIN
-Waste:
-- Paper
-- Cardboard
-- Plastic
-- Metal
-- Glass
-- Dry recyclable packaging
-
-Return:
-category = "DRY"
-department = "Engineering"
-facilityKey = "DADUMAJRA_RDF"
-
---------------------------------
-
-RED BAG
-Waste:
-- Sanitary pads
-- Diapers
-- Bandages
-- Household biomedical waste
-
-Return:
-category = "SANITARY"
-department = "CPCC"
-facilityKey = "NIMBUA_TSDF"
-
---------------------------------
-
-BLACK BIN
-Waste:
-- Batteries
-- Paint
-- Chemicals
-- CFL
-- Tube lights
-- E-waste
-- Hazardous waste
-
-Return:
-category = "HAZARDOUS"
-department = "CPCC"
-facilityKey = "NIMBUA_TSDF"
-
-VALIDATION RULES
-
-detectedBinType:
-Allowed values:
-GREEN
-BLUE
-RED
-BLACK
-UNKNOWN
-
-resourcePotential:
-HIGH
-MEDIUM
-LOW
-NONE
-
-locationConsistency:
-INDIA
-POSSIBLY_INDIA
-UNKNOWN
-NOT_INDIA
-
-isSuspicious = true if:
-- Screenshot
-- Stock photo
-- AI generated image
-- Edited image
-- Cartoon
-- Advertisement
-- No real waste bin
-- Clearly outside India
-
-Otherwise false.
-
-isEmpty = true if:
-- No visible waste inside the bin.
-
-Otherwise false.
-
-hasCrossContamination = true if:
-- Waste does not belong in the detected bin.
-
-Otherwise false.
-
-contaminationDetail:
-Short description.
-Empty string if none.
-
-isCorrectBinType:
-true only if waste matches detected bin.
-
-isProperlyWrapped:
-Applicable only for sanitary waste.
-true only if visibly wrapped.
-Otherwise false.
-
-aiDescription:
-Maximum 20 words.
-Describe only visible objects.
-Do not guess.
-
-Return EXACTLY this JSON:
-
-{
-  "category":"",
-  "department":"",
-  "facilityKey":"",
-  "resourcePotential":"",
-  "confidence":0.00,
-  "locationConsistency":"",
-  "isSuspicious":false,
-  "aiDescription":"",
-  "detectedBinType":"",
-  "isCorrectBinType":true,
-  "hasCrossContamination":false,
-  "contaminationDetail":"",
-  "isEmpty":false,
-  "isProperlyWrapped":false
-}
-""";
     }
 }

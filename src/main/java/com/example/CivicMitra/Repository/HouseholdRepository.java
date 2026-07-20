@@ -4,6 +4,8 @@ import com.example.CivicMitra.model.segregation.Household;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Optional;
+
 @Repository
 public interface HouseholdRepository extends JpaRepository<Household, Long> {
 
@@ -16,4 +18,10 @@ public interface HouseholdRepository extends JpaRepository<Household, Long> {
      * that loads the entire households table into memory.
      */
     boolean existsByHouseNumberAndWard_WardId(String houseNumber, Long wardId);
+
+    /**
+     * Find the household linked to a specific resident user.
+     * Used by Rahul's verification flow to look up a household by user ID.
+     */
+    Optional<Household> findFirstByPrimaryResident_Id(Long userId);
 }

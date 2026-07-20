@@ -1,47 +1,39 @@
-export type BinType = "GREEN" | "BLUE" | "RED" | "BLACK";
+import { readSession } from "./session";
+import type { Complaint, Profile, Submission, UserRole, WorkerPickupAction, WorkerScanDetails } from "./types";
 
-export type LoginResponse = { token: string; email: string; role: string; name: string; message: string };
-export type BinResult = { binType: BinType; passed: boolean; aiConfidence: number; contaminationDetail?: string };
-export type SegregationResponse = { submissionId: number; status: string; overallScore: number; failureReason?: string; attemptNumber: number; qrToken?: string; qrCodeBase64?: string; qrExpiresAt?: string; submittedAt?: string; binResults?: BinResult[] };
-export type QRScanResponse = { scanResult: string; houseNumber: string; collected: boolean; message: string };
+const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
-export class ApiError extends Error {}
-
-async function request<T>(url: string, options: RequestInit): Promise<T> {
-  const response = await fetch(url, options);
-  const contentType = response.headers.get("content-type") ?? "";
-  const data: unknown = contentType.includes("application/json") ? await response.json() : await response.text();
+async function request<T>(path: string, init: RequestInit = {}, authenticated = true): Promise<T> {
+  const session = authenticated ? readSession() : null;
+  const response = await fetch(`${baseUrl}${path}`, { ...init, headers: { ...(session ? { Authorization: `Bearer ${session.token}` } : {}), ...(init.headers || {}) } });
+  const text = await response.text();
+  let body: unknown = {};
+  try { body = text ? JSON.parse(text) : {}; } catch { body = { message: text }; }
   if (!response.ok) {
-    const message = typeof data === "object" && data && "error" in data ? String(data.error) : typeof data === "string" ? data : `Request failed (${response.status})`;
-    throw new ApiError(message);
+    let message = typeof body === "object" && body ? (body as { error?: string; message?: string }).error || (body as { message?: string }).message : "Request failed";
+    if (typeof body === "object" && body && (body as any).fields) {
+      const fields = (body as any).fields;
+      const fieldErrors = Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join(", ");
+      if (fieldErrors) message = `${message} (${fieldErrors})`;
+    }
+    throw new Error(message || "Request failed");
   }
-  return data as T;
+  return body as T;
 }
 
-export function login(baseUrl: string, email: string, password: string) {
-  return request<LoginResponse>(`${baseUrl}/api/v1/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
-}
-
-export function register(baseUrl: string, fullName: string, email: string, password: string, role: string) {
-  return request<any>(`${baseUrl}/api/v1/auth/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fullName, email, password, role }) });
-}
-
-export function submitSegregation(baseUrl: string, token: string, input: { householdId: number; lat: number; lng: number; bins: Array<{ type: BinType; file: File }> }) {
-  const form = new FormData();
-  input.bins.forEach((bin) => { form.append("binImages", bin.file); form.append("binTypes", bin.type); });
-  form.append("householdId", String(input.householdId));
-  form.append("lat", String(input.lat));
-  form.append("lng", String(input.lng));
-  return request<SegregationResponse>(`${baseUrl}/api/v1/segregation/submit`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
-}
-
-export function verifyQr(baseUrl: string, token: string, input: { tokenId: string; workerId: number; workerLat: number; workerLng: number }) {
-  const params = new URLSearchParams({ tokenId: input.tokenId, workerId: String(input.workerId), workerLat: String(input.workerLat), workerLng: String(input.workerLng) });
-  return request<QRScanResponse>(`${baseUrl}/api/v1/segregation/verify-qr?${params}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-}
-
-export function getSegregationHistory(baseUrl: string, token: string, householdId: number) {
-  return request<SegregationResponse[]>(`${baseUrl}/api/v1/segregation/history/${householdId}`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-}
+export const api = {
+  login: (email: string, password: string) => request<{ token: string; email: string; name: string; role: UserRole; userId: number }>("/api/v1/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }, false),
+  register: (body: Record<string, unknown>) => request("/api/v1/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, false),
+  profile: () => request<Profile>("/api/v1/dashboard/profile"),
+  saveHousehold: (body: { houseNumber: string; lat?: number; lng?: number }) => request<Profile>("/api/v1/dashboard/household", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  history: (householdId: number) => request<Submission[]>(`/api/v1/segregation/history/${householdId}`),
+  submitBins: (body: FormData) => request<Submission>("/api/v1/segregation/submit", { method: "POST", body }),
+  complaints: () => request<Complaint[]>("/api/v1/complaints/my-complaints"),
+  createComplaint: (body: FormData) => request<Complaint>("/api/v1/complaints", { method: "POST", body }),
+  allComplaints: () => request<Complaint[]>("/api/v1/complaints"),
+  updateComplaintStatus: (id: number, status: string) => request<Complaint>(`/api/v1/complaints/${id}/status?status=${encodeURIComponent(status)}`, { method: "PATCH" }),
+  verifyQr: (tokenId: string, workerId: number, workerLat: number, workerLng: number) => request<{ scanResult: string; houseNumber: string; collected: boolean; message: string }>(`/api/v1/segregation/verify-qr?tokenId=${encodeURIComponent(tokenId)}&workerId=${workerId}&workerLat=${workerLat}&workerLng=${workerLng}`, { method: "POST" }),
+  scanQr: (tokenId: string, workerLat: number, workerLng: number) => request<WorkerScanDetails>(`/api/v1/segregation/scan-qr?tokenId=${encodeURIComponent(tokenId)}&workerLat=${workerLat}&workerLng=${workerLng}`, { method: "POST" }),
+  confirmPickup: (tokenId: string, workerId: number, workerLat: number, workerLng: number) => request<WorkerPickupAction>(`/api/v1/segregation/confirm-pickup?tokenId=${encodeURIComponent(tokenId)}&workerId=${workerId}&workerLat=${workerLat}&workerLng=${workerLng}`, { method: "POST" }),
+  rejectPickup: (body: FormData) => request<WorkerPickupAction>("/api/v1/segregation/reject-pickup", { method: "POST", body })
+};

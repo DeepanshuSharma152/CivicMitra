@@ -75,7 +75,8 @@ public class AuthRestController {
                 "token", jwtToken,
                 "email", user.getUsername(),
                 "role", user1.getRole().name(), // This fixes your React "Access Denied" logic
-                 "name", user1.getFullName(),
+                "name", user1.getFullName(),
+                "userId", user1.getId(),
                 "message", "Login successful"
         ));
     }

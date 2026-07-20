@@ -1,25 +1,16 @@
 import type { Metadata } from "next";
+import "./tailwind.css";
 import "./globals.css";
-import { AuthProvider } from "./context/AuthContext";
-import Navbar from "../components/Navbar";
+import { Geist } from "next/font/google";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
-  title: "CivicMitra | Verified waste segregation",
-  description: "Household-to-worker waste segregation verification"
+  title: "CivicMitra",
+  description: "Clean City. Better Tomorrow."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <html lang="en">
-      <body>
-        <AuthProvider>
-          <Navbar />
-          <main>
-            {children}
-          </main>
-        </AuthProvider>
-      </body>
-    </html>
-  );
+  return <html lang="en" className={cn("font-sans", geist.variable)}><body>{children}</body></html>;
 }
-

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#087a42">
+    <title>CivicMitra | Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+<div class="dashboard-shell">
+    <aside class="sidebar">
+        <a class="brand" href="/dashboard" aria-label="CivicMitra dashboard"><span class="brand-mark">C</span><span><strong>CivicMitra</strong><small>Clean City. Better Tomorrow.</small></span></a>
+        <nav aria-label="Dashboard navigation">
+            <a class="nav-link active" href="#overview"><span>⌂</span>Dashboard</a>
+            <button class="nav-link" type="button" data-open="verificationDialog"><span>⌁</span>Submit waste</button>
+            <a class="nav-link" href="#submissions"><span>▤</span>My submissions</a>
+            <a class="nav-link" href="#pickupPass"><span>▦</span>My QR token</a>
+            <a class="nav-link" href="#collection"><span>◫</span>Collection schedule</a>
+            <a class="nav-link" href="#rewards"><span>✦</span>Rewards</a>
+            <button class="nav-link" type="button" data-open="householdDialog"><span>⌂</span>My household</button>
+            <a class="nav-link" href="#grievances"><span>!</span>Grievances</a>
+        </nav>
+        <section class="trust-card" aria-label="Your trust score"><span class="trust-icon">✓</span><div><p>Trust score</p><strong id="trustScore">--<small>/100</small></strong><span id="trustDetail">Based on verified submissions</span></div><div class="trust-track"><span id="trustBar"></span></div></section>
+        <button class="logout-button" id="logoutButton" type="button">Sign out</button>
+    </aside>
+
+    <main class="dashboard-main" id="overview">
+        <header class="topbar">
+            <div><h1>Good morning, <span id="userFirstName">there</span>!</h1><p>Here is your waste segregation overview.</p></div>
+            <div class="topbar-actions"><button class="notice-button" type="button" data-scroll="#notifications" aria-label="View notifications">◌<span id="notificationBadge" class="notification-badge hidden">0</span></button><button class="home-selector" type="button" data-open="householdDialog"><span>⌂</span><span><strong id="householdLabel">Set up your household</strong><small id="householdAddress">Add your home to begin</small></span><b>⌄</b></button><button class="profile-button" id="profileButton" type="button"><span id="profileInitial">C</span><span><strong id="profileName">CivicMitra citizen</strong><small id="profileRole">Citizen</small></span><b>⌄</b></button></div>
+        </header>
+
+        <p id="dashboardNotice" class="dashboard-notice hidden" role="status"></p>
+
+        <section class="metric-grid" aria-label="Dashboard statistics">
+            <article class="metric-card"><span class="metric-icon approved">✓</span><p>Submissions approved</p><strong id="approvedCount">--</strong><small id="approvedCaption">Loading history</small><div class="sparkline green"><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+            <article class="metric-card"><span class="metric-icon pickup">⌁</span><p>Upcoming pickups</p><strong id="pickupCount">--</strong><small id="pickupCaption">Checking pickup pass</small><div class="sparkline blue"><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+            <article class="metric-card"><span class="metric-icon grievance">!</span><p>Pending grievances</p><strong id="grievanceCount">--</strong><small id="grievanceCaption">Loading your reports</small><div class="sparkline orange"><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+            <article id="rewards" class="metric-card"><span class="metric-icon rewards">✦</span><p>Green points</p><strong id="rewardPoints">--</strong><small>Earned from approved checks</small><div class="sparkline mint"><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+        </section>
+
+        <div class="content-grid">
+            <section class="performance-panel panel"><div class="panel-title"><h2>Segregation performance</h2><button class="select-button" type="button">All verified checks ⌄</button></div><div class="performance-content"><div class="score-ring" id="scoreRing"><strong id="scoreValue">--</strong><span>Overall score</span></div><div class="bin-stats" id="binStats"><p class="empty-inline">Your scores will appear after your first verification.</p></div><div class="performance-note"><span>✦</span><div><h3 id="performanceTitle">Ready when you are</h3><p id="performanceCopy">Submit clear bin photos to build your household segregation score.</p><button type="button" data-open="verificationDialog">Verify bins <b>→</b></button></div></div></div></section>
+            <aside class="qr-panel panel" id="pickupPass"><div class="panel-title"><h2>Your current QR token</h2><span id="qrStatus" class="status-tag">Waiting</span></div><div id="qrEmpty" class="qr-empty"><span>⌁</span><h3>No pickup pass yet</h3><p>Complete a successful waste check to receive a token.</p></div><div id="qrActive" class="qr-active hidden"><img id="qrImage" alt="Your collection QR token"><div><p>Valid until</p><strong id="qrExpiry">--</strong><small id="qrExpiryDetail"></small></div></div><button id="viewQrButton" class="primary-button full-button" type="button" disabled>View QR</button></aside>
+            <section class="submissions-panel panel" id="submissions"><div class="panel-title"><h2>Recent submissions</h2><button class="text-button" data-open="verificationDialog" type="button">New verification</button></div><div id="submissionsList" class="submission-list"><p class="empty-inline">Connect your household to see your verification history.</p></div></section>
+            <section class="guide-panel panel"><div class="panel-title"><h2>Waste segregation guide</h2><button class="text-button" data-open="verificationDialog" type="button">Verify bins</button></div><div class="guide-grid"><article><span class="bin green-bin">♜</span><strong>Green bin</strong><p>Wet waste</p></article><article><span class="bin blue-bin">♜</span><strong>Blue bin</strong><p>Dry waste</p></article><article><span class="bin red-bin">♜</span><strong>Red bin</strong><p>Sanitary waste</p></article><article><span class="bin black-bin">♜</span><strong>Black bin</strong><p>Hazardous waste</p></article></div></section>
+            <section class="collection-panel panel" id="collection"><div class="panel-title"><h2>Collection schedule</h2><button id="scheduleButton" class="text-button" type="button">View details</button></div><div class="schedule-main"><span>◫</span><div><strong>Daily doorstep collection</strong><p>7:00 AM to 9:00 AM</p></div><small id="collectionArea">Set your household to see your ward.</small></div><p class="collection-tip">Keep your verified bins ready before the pickup window.</p></section>
+            <section class="grievance-panel panel" id="grievances"><div class="panel-title"><h2>Recent grievances</h2><button id="newReportButton" class="text-button" type="button">Report an issue</button></div><div id="grievanceList" class="grievance-list"><p class="empty-inline">Your reports will appear here.</p></div></section>
+            <section class="cleaner-banner"><div><h2>Together, we build a cleaner city</h2><p>Every verified check helps collection run smoothly.</p><button type="button" data-open="verificationDialog">Submit waste</button></div><img src="/images/home-bins.png" alt="Clean neighbourhood with recycling bins"></section>
+            <section class="notifications-panel panel" id="notifications"><div class="panel-title"><h2>Recent notifications</h2><button id="refreshButton" class="text-button" type="button">Refresh</button></div><div id="notificationsList" class="notification-list"><p class="empty-inline">You are all caught up.</p></div></section>
+        </div>
+    </main>
+</div>
+
+<dialog id="householdDialog" class="dialog"><form id="householdForm" method="dialog"><header><div><h2>Set up your household</h2><p>This connects your home to verification and collection.</p></div><button type="button" class="icon-button" data-close="householdDialog" aria-label="Close">×</button></header><label>House or flat number<input id="houseNumberInput" placeholder="For example, 1256" required></label><p class="dialog-note" id="householdArea">Your registered ward will be used for collection.</p><p id="householdError" class="form-error" role="alert"></p><button id="saveHouseholdButton" class="primary-button" type="submit">Save household</button></form></dialog>
+
+<dialog id="verificationDialog" class="dialog dialog-wide"><form id="verificationForm"><header><div><h2>Verify your bins</h2><p>Share a clear photo of each bin for a quick collection check.</p></div><button type="button" class="icon-button" data-close="verificationDialog" aria-label="Close">×</button></header><div id="binUploadGrid" class="upload-grid"></div><p id="verificationLocation" class="dialog-note">Your approximate location helps verify this is your registered household.</p><p id="verificationError" class="form-error" role="alert"></p><button id="verifyBinsButton" class="primary-button" type="submit">Check my bins</button></form></dialog>
+
+<dialog id="reportDialog" class="dialog"><form id="reportForm"><header><div><h2>Report an issue</h2><p>Share what needs attention in your neighbourhood.</p></div><button type="button" class="icon-button" data-close="reportDialog" aria-label="Close">×</button></header><label>Issue title<input id="reportTitle" placeholder="For example, missed collection" required></label><label>What happened?<textarea id="reportDescription" rows="3" placeholder="Describe the issue clearly" required></textarea></label><label>Category<input id="reportCategory" placeholder="For example, collection" required></label><label>Add a photo<input id="reportImage" type="file" accept="image/*" required></label><p id="reportError" class="form-error" role="alert"></p><button id="submitReportButton" class="primary-button" type="submit">Submit report</button></form></dialog>
+<dialog id="qrDialog" class="dialog qr-dialog"><button type="button" class="icon-button close-qr" data-close="qrDialog" aria-label="Close">×</button><img id="qrDialogImage" alt="Your collection QR token"><h2>Your pickup pass</h2><p id="qrDialogText"></p></dialog>
+<div id="toast" class="toast" role="status"></div>
+<script src="/dashboard.js"></script>
+</body>
+</html>

@@ -100,7 +100,7 @@ public class ComplaintController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasRole('AUTHORITY')") // Extra security: only Authorities can change status
+    @PreAuthorize("hasAnyRole('AUTHORITY', 'MUNICIPAL_ADMIN')")
     public ResponseEntity<ComplaintResponseDTO> updateStatus(
             @PathVariable Long id,
             @RequestParam ComplaintStatus status) {  // Spring automatically converts String "RESOLVED" to Enum
