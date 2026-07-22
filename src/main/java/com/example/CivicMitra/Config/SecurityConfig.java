@@ -49,10 +49,12 @@ public class SecurityConfig {
                         ).permitAll()
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers("/api/v1/auth/**").permitAll()
+                        .requestMatchers("/api/v1/otp/**").permitAll()  // OTP: needed pre-login during registration
                         .requestMatchers("/api/v1/admin/**").hasRole("AUTHORITY")
                         .requestMatchers("/api/v1/complaints/create").hasRole("CITIZEN")
                         .requestMatchers("/api/v1/segregation/**").authenticated()
                         .requestMatchers("/api/v1/households/**").authenticated()
+                        .requestMatchers("/api/v1/consent/**").authenticated()
                         .anyRequest().authenticated() // All other endpoints need a JWT
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

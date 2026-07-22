@@ -197,7 +197,7 @@ function ResultContent() {
           className="mt-12 grid divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-sm sm:grid-cols-4 sm:divide-x sm:divide-y-0"
         >
           <ResultMetric delay={0.6} icon={<Award className="size-6" />} label="Overall score" value={`${Math.round(result.overallScore)}%`} detail="Excellent" tone="emerald" />
-          <ResultMetric delay={0.7} icon={<BarChart3 className="size-6" />} label="Attempt" value={`${result.attemptNumber} / 3`} detail="Today" tone="blue" />
+          <ResultMetric delay={0.7} icon={<BarChart3 className="size-6" />} label="Attempt" value={`${result.attemptNumber} / 5`} detail="Today" tone="blue" />
           <ResultMetric delay={0.8} icon={<CalendarDays className="size-6" />} label="Next pickup" value="Tomorrow" detail="7:00 AM - 9:00 AM" tone="amber" />
           <ResultMetric delay={0.9} icon={<Gift className="size-6" />} label="Rewards" value="+20" detail="Green points" tone="violet" />
         </motion.section>

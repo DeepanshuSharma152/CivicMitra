@@ -85,7 +85,7 @@ public class SegregationService {
         Household household = householdRepository.findById(householdId)
                 .orElseThrow(() -> new RuntimeException("Household not found"));
 
-        // ── Guard 2: max 3 attempts per day ──────────────────
+        // ── Guard 2: max 5 attempts per day ──────────────────
         LocalDate today = LocalDate.now();
         long attemptsToday = segregationRepository
                 .countByHouseholdAndSubmittedAtBetween(
@@ -93,9 +93,9 @@ public class SegregationService {
                         today.atStartOfDay(),
                         today.atTime(23, 59, 59));
 
-        if (attemptsToday >= 3) {
+        if (attemptsToday >= 5) {
             throw new RuntimeException(
-                    "Maximum 3 attempts per day reached. " +
+                    "Maximum 5 attempts per day reached. " +
                             "A violation has been logged.");
         }
 
@@ -125,47 +125,64 @@ public class SegregationService {
         String uploadDir = "uploads/segregation/";
         Files.createDirectories(Paths.get(uploadDir));
 
-        List<BinAnalysis> binAnalyses = new ArrayList<>();
-
-        for (int i = 0; i < binImages.size(); i++) {
-            MultipartFile file = binImages.get(i);
-            BinType expectedType;
-
-            // Parse bin type safely — bad input shouldn't crash server
+        // ── Parse and validate all bin types upfront ────────────────────────
+        List<BinType> expectedTypes = new ArrayList<>();
+        for (String rawType : binTypes) {
             try {
-                expectedType = BinType.valueOf(binTypes.get(i).toUpperCase().trim());
+                expectedTypes.add(BinType.valueOf(rawType.toUpperCase().trim()));
             } catch (IllegalArgumentException e) {
                 throw new RuntimeException(
-                        "Invalid bin type: '" + binTypes.get(i) +
+                        "Invalid bin type: '" + rawType +
                                 "'. Must be GREEN, BLUE, RED, or BLACK.");
             }
+        }
 
-            // Save image to disk
+        // ── Save images to disk and build payloads for batch AI call ─────────
+        List<WasteAiService.ImagePayload> payloads = new ArrayList<>();
+        List<String> imageFileNames = new ArrayList<>();
+        for (int i = 0; i < binImages.size(); i++) {
+            MultipartFile file = binImages.get(i);
+            BinType expectedType = expectedTypes.get(i);
             String fileName = System.currentTimeMillis() + "_"
-                    + expectedType.name() + "_"
-                    + file.getOriginalFilename();
+                    + expectedType.name() + "_" + file.getOriginalFilename();
             Files.copy(file.getInputStream(),
                     Paths.get(uploadDir + fileName),
                     StandardCopyOption.REPLACE_EXISTING);
-
-            // AI analysis — each bin photo analyzed independently
-            WasteAnalysis ai = wasteAiService.analyzeWasteImage(
+            imageFileNames.add(fileName);
+            payloads.add(new WasteAiService.ImagePayload(
                     Files.readAllBytes(Paths.get(uploadDir + fileName)),
-                    file.getOriginalFilename());
+                    expectedType.name()));
+        }
 
-            // Build BinAnalysis entity from AI response
+        // ── Single Ollama call for all 4 images ──────────────────────────────
+        List<WasteAnalysis> aiResults = wasteAiService.analyzeAllBins(payloads);
+
+        // ── Build BinAnalysis entities from AI results ───────────────────────
+        List<BinAnalysis> binAnalyses = new ArrayList<>();
+        for (int i = 0; i < binImages.size(); i++) {
+            WasteAnalysis ai = (i < aiResults.size()) ? aiResults.get(i) : null;
+            BinType expectedType = expectedTypes.get(i);
+
             BinAnalysis binAnalysis = new BinAnalysis();
             binAnalysis.setExpectedBinType(expectedType);
-            binAnalysis.setDetectedBinType(parseBinType(ai.detectedBinType()));
-            binAnalysis.setImagePath(fileName);
-            binAnalysis.setAiConfidence(ai.confidence());
-            binAnalysis.setCorrectBinType(ai.isCorrectBinType());
-            binAnalysis.setHasCrossContamination(ai.hasCrossContamination());
-            binAnalysis.setContaminationDetail(ai.contaminationDetail());
-            binAnalysis.setSuspicious(ai.isSuspicious());
-            binAnalysis.setEmpty(ai.isEmpty());
-            binAnalysis.setProperlyWrapped(ai.isProperlyWrapped()); // maps to field 'properlyWrapped'
-            // submission link set after submission entity is built
+            binAnalysis.setImagePath(imageFileNames.get(i));
+
+            if (ai != null) {
+                binAnalysis.setDetectedBinType(parseBinType(ai.getDetectedBinType()));
+                binAnalysis.setAiConfidence(ai.getConfidence());
+                binAnalysis.setCorrectBinType(ai.isCorrectBinType());
+                binAnalysis.setHasCrossContamination(ai.isHasCrossContamination());
+                binAnalysis.setContaminationDetail(ai.getContaminationDetail());
+                binAnalysis.setSuspicious(ai.isSuspicious());
+                binAnalysis.setEmpty(ai.isEmpty());
+                binAnalysis.setProperlyWrapped(ai.isProperlyWrapped());
+            } else {
+                // Model returned fewer results than images — treat as failed
+                binAnalysis.setDetectedBinType(null);
+                binAnalysis.setAiConfidence(0.0);
+                binAnalysis.setCorrectBinType(false);
+                binAnalysis.setAiConfidence(0.0);
+            }
             binAnalyses.add(binAnalysis);
         }
 
@@ -194,9 +211,9 @@ public class SegregationService {
             GreenQRToken qr = generateQRToken(submission, household);
             submission.setQrToken(qr);
         } else {
-            // 3rd failed attempt = FAILED (violation worthy)
-            // 1st or 2nd = PENDING_RETRY (citizen can try again)
-            SubmissionStatus failStatus = (attemptsToday >= 2)
+            // 5th failed attempt = FAILED (violation worthy)
+            // 1st to 4th = PENDING_RETRY (citizen can try again)
+            SubmissionStatus failStatus = (attemptsToday >= 4)
                     ? SubmissionStatus.FAILED
                     : SubmissionStatus.PENDING_RETRY;
             submission.setStatus(failStatus);

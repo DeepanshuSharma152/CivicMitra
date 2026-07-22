@@ -179,22 +179,292 @@ function PhotoPreview({ file, label, onRemove }: { file: File; label: string; on
   );
 }
 
-function ProcessingOverlay() {
+function MunicipalityTruckOverlay({
+  pendingBody,
+  onComplete,
+  onError
+}: {
+  pendingBody: FormData;
+  onComplete: (res: any) => void;
+  onError: (err: string) => void;
+}) {
+  const [progress, setProgress] = useState(8);
+  const [statusText, setStatusText] = useState("Municipal Eco-Truck dispatched to household coordinates...");
+  const [activeBinIndex, setActiveBinIndex] = useState(0);
+  const [isSpeedingOff, setIsSpeedingOff] = useState(false);
+
+  const stages = [
+    { text: "Municipal Eco-Truck arrived at your household location...", bin: 0 },
+    { text: "Auditing GREEN bin (wet & organic waste separation)...", bin: 0 },
+    { text: "Auditing BLUE bin (dry recyclables, paper & plastics)...", bin: 1 },
+    { text: "Auditing RED bin (sanitary waste wrapping compliance)...", bin: 2 },
+    { text: "Auditing BLACK bin (hazardous waste verification)...", bin: 3 },
+    { text: "Checking cross-contamination & spatial compliance...", bin: 0 },
+    { text: "Calculating final household score & minting Green QR Token...", bin: 1 }
+  ];
+
+  useEffect(() => {
+    let isMounted = true;
+    let pollInterval: NodeJS.Timeout | null = null;
+
+    async function startFlow() {
+      try {
+        const initialRes = await api.submitBins(pendingBody);
+        if (!isMounted) return;
+
+        if (initialRes?.status && initialRes.status !== "PROCESSING") {
+          finishFlow(initialRes);
+          return;
+        }
+
+        const id = initialRes?.submissionId;
+        if (!id) {
+          throw new Error("Failed to receive submission ID from server.");
+        }
+
+        // Poll every 2.5 seconds
+        pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await api.getStatus(id);
+            if (!isMounted) return;
+
+            if (statusRes?.status && statusRes.status !== "PROCESSING") {
+              if (pollInterval) clearInterval(pollInterval);
+              finishFlow(statusRes);
+            }
+          } catch (err) {
+            console.error("Polling status error:", err);
+          }
+        }, 2500);
+
+      } catch (err: any) {
+        if (!isMounted) return;
+        onError(err?.message || "Unable to analyze waste photos. Please try again.");
+      }
+    }
+
+    void startFlow();
+
+    return () => {
+      isMounted = false;
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [pendingBody]);
+
+  // Smoothly increment progress bar & cycle stage quotes while polling
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setProgress(prev => (prev >= 94 ? prev : prev + Math.floor(Math.random() * 3 + 1)));
+    }, 1200);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const stageIdx = Math.min(stages.length - 1, Math.floor((progress / 100) * stages.length));
+    setStatusText(stages[stageIdx].text);
+    setActiveBinIndex(stages[stageIdx].bin);
+  }, [progress]);
+
+  function finishFlow(res: any) {
+    setProgress(100);
+    setStatusText("Segregation Verified! Eco-Truck speeding to processing center ⚡");
+    setIsSpeedingOff(true);
+
+    setTimeout(() => {
+      onComplete(res);
+    }, 1100);
+  }
+
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-md">
-      <motion.div 
-        initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        className="flex flex-col items-center rounded-3xl bg-white p-10 text-center shadow-2xl"
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-xl selection:bg-emerald-200"
+    >
+      <motion.div
+        initial={{ scale: 0.85, y: 20, opacity: 0 }}
+        animate={{ scale: 1, y: 0, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-b from-slate-900/90 via-slate-900/95 to-slate-950/90 p-6 text-white shadow-2xl backdrop-blur-2xl sm:p-8"
       >
-        <div className="relative mb-6">
-          <div className="absolute inset-0 animate-ping rounded-full bg-emerald-400 opacity-20" />
-          <div className="relative flex size-20 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 shadow-lg shadow-emerald-500/30">
-            <Sparkles className="size-10 text-white animate-pulse" />
+        {/* Background Ambient Glows */}
+        <div className="pointer-events-none absolute -left-20 -top-20 size-72 rounded-full bg-emerald-500/20 blur-3xl" />
+        <div className="pointer-events-none absolute -right-20 -bottom-20 size-72 rounded-full bg-sky-500/20 blur-3xl" />
+
+        {/* Circular Eco City Animation Badge (Inspired by Lottie illustrations) */}
+        <div className="relative mx-auto flex size-44 items-center justify-center sm:size-52">
+          <div className="absolute inset-0 animate-ping rounded-full bg-emerald-500/10 opacity-70 duration-1000" />
+          <div className="absolute -inset-2 rounded-full border border-emerald-500/30 bg-gradient-to-tr from-emerald-500/10 via-sky-500/10 to-teal-500/10 backdrop-blur" />
+
+          {/* Main Circular Scene */}
+          <div className="relative size-full overflow-hidden rounded-full border-2 border-emerald-400/40 bg-gradient-to-b from-sky-400 via-emerald-300 to-emerald-600 p-2 shadow-xl shadow-emerald-950/50">
+            
+            {/* Sun Rays & Sky */}
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-200/40 via-sky-300/30 to-transparent" />
+
+            {/* Moving Clouds */}
+            <motion.div 
+              animate={{ x: [0, 35, 0] }} 
+              transition={{ repeat: Infinity, duration: 10, ease: "easeInOut" }}
+              className="absolute left-3 top-4 flex gap-2 opacity-85"
+            >
+              <div className="h-3 w-8 rounded-full bg-white/90 shadow-sm" />
+              <div className="h-4 w-10 rounded-full bg-white/90 shadow-sm" />
+            </motion.div>
+
+            {/* City Silhouette */}
+            <div className="absolute bottom-12 left-0 right-0 flex justify-around opacity-30 text-xl">
+              <span>🏢</span>
+              <span>🏭</span>
+              <span>🏙️</span>
+              <span>🌳</span>
+            </div>
+
+            {/* Moving Road Track */}
+            <div className="absolute bottom-0 left-0 right-0 h-10 bg-slate-800">
+              <motion.div 
+                animate={{ x: isSpeedingOff ? [-100, 0] : [-40, 0] }}
+                transition={{ repeat: Infinity, duration: isSpeedingOff ? 0.2 : 0.6, ease: "linear" }}
+                className="flex h-1.5 w-[200%] translate-y-4 gap-6 px-2"
+              >
+                {Array.from({ length: 16 }).map((_, i) => (
+                  <div key={i} className="h-full w-4 rounded-full bg-amber-400/90 shadow-sm" />
+                ))}
+              </motion.div>
+            </div>
+
+            {/* Municipal Waste Truck Graphic */}
+            <motion.div 
+              animate={isSpeedingOff ? { x: [0, 180], opacity: [1, 0] } : { y: [0, -3, 0] }}
+              transition={isSpeedingOff ? { duration: 0.9, ease: "easeIn" } : { repeat: Infinity, duration: 0.8, ease: "easeInOut" }}
+              className="absolute bottom-2 left-4 z-20 flex items-end"
+            >
+              <div className="relative">
+                {/* Green Eco Sparks */}
+                <motion.div 
+                  animate={{ opacity: [0.4, 1, 0.4], scale: [0.8, 1.2, 0.8] }}
+                  transition={{ repeat: Infinity, duration: 0.5 }}
+                  className="absolute -left-3 bottom-2 text-xs"
+                >
+                  ✨🌿
+                </motion.div>
+
+                <svg width="110" height="52" viewBox="0 0 110 52" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-md">
+                  {/* Container Body */}
+                  <rect x="2" y="8" width="62" height="32" rx="4" fill="#059669" />
+                  <path d="M10 8H56V40H10V8Z" fill="#047857" />
+                  <path d="M4 14H60" stroke="#10B981" strokeWidth="2" strokeDasharray="4 2" />
+                  <text x="14" y="27" fill="#ECFDF5" fontSize="8" fontWeight="bold" fontFamily="sans-serif">CIVIC MITRA</text>
+                  <text x="18" y="35" fill="#A7F3D0" fontSize="6" fontFamily="sans-serif">ECO AUDIT</text>
+
+                  {/* Cab (Driver Area) */}
+                  <path d="M64 16H88C94 16 98 20 98 26V40H64V16Z" fill="#0284C7" />
+                  <path d="M72 20H88C91 20 94 22 94 25V30H72V20Z" fill="#E0F2FE" />
+                  <circle cx="80" cy="25" r="2.5" fill="#0284C7" />
+
+                  {/* Headlight Beam */}
+                  <path d="M98 32L108 30V38L98 36V32Z" fill="#FEF08A" opacity="0.8" />
+
+                  {/* Rotating Wheels */}
+                  <g className="animate-spin" style={{ animationDuration: isSpeedingOff ? "0.2s" : "0.7s", transformOrigin: "20px 42px" }}>
+                    <circle cx="20" cy="42" r="8" fill="#1E293B" />
+                    <circle cx="20" cy="42" r="4" fill="#94A3B8" />
+                  </g>
+                  <g className="animate-spin" style={{ animationDuration: isSpeedingOff ? "0.2s" : "0.7s", transformOrigin: "52px 42px" }}>
+                    <circle cx="52" cy="42" r="8" fill="#1E293B" />
+                    <circle cx="52" cy="42" r="4" fill="#94A3B8" />
+                  </g>
+                  <g className="animate-spin" style={{ animationDuration: isSpeedingOff ? "0.2s" : "0.7s", transformOrigin: "82px 42px" }}>
+                    <circle cx="82" cy="42" r="8" fill="#1E293B" />
+                    <circle cx="82" cy="42" r="4" fill="#94A3B8" />
+                  </g>
+                </svg>
+
+                {/* Animated Hydraulic Arm Lifting Active Bin */}
+                <motion.div 
+                  animate={{ y: [0, -14, 0], rotate: [0, -12, 0] }}
+                  transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
+                  className="absolute -left-5 top-2 flex items-center gap-1"
+                >
+                  <div className={`size-5 rounded-sm shadow-md border ${
+                    activeBinIndex === 0 ? "bg-emerald-500 border-emerald-300" :
+                    activeBinIndex === 1 ? "bg-sky-500 border-sky-300" :
+                    activeBinIndex === 2 ? "bg-rose-500 border-rose-300" :
+                    "bg-slate-800 border-slate-600"
+                  } flex items-center justify-center text-[10px]`}>
+                    ♻️
+                  </div>
+                </motion.div>
+              </div>
+            </motion.div>
           </div>
         </div>
-        <h2 className="text-2xl font-bold text-slate-900">Analyzing your bins...</h2>
-        <p className="mt-3 max-w-[280px] text-[15px] leading-relaxed text-slate-500">
-          Our AI is checking for proper segregation and cross-contamination. This will only take a moment.
+
+        {/* Status Prompt Header */}
+        <div className="mt-6 text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1 text-xs font-semibold text-emerald-300 backdrop-blur-md">
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+            </span>
+            Municipal AI Waste Auditor Active
+          </div>
+
+          <h2 className="mt-3 text-xl font-bold tracking-tight text-white sm:text-2xl">
+            {isSpeedingOff ? "Segregation Verified!" : "Auditing Household Bins..."}
+          </h2>
+
+          <p className="mt-2 min-h-[36px] text-xs font-medium text-slate-300 sm:text-sm leading-relaxed flex items-center justify-center px-4">
+            {statusText}
+          </p>
+        </div>
+
+        {/* 4 Bins Status Indicator */}
+        <div className="mt-5 grid grid-cols-4 gap-2 text-center">
+          {[
+            { label: "Green", border: "border-emerald-400", icon: "🌱" },
+            { label: "Blue", border: "border-sky-400", icon: "📦" },
+            { label: "Red", border: "border-rose-400", icon: "🩹" },
+            { label: "Black", border: "border-slate-500", icon: "🔋" }
+          ].map((bin, i) => {
+            const isActive = activeBinIndex === i;
+            return (
+              <motion.div
+                key={bin.label}
+                animate={isActive ? { scale: [1, 1.06, 1], y: [0, -2, 0] } : { scale: 1, y: 0 }}
+                transition={{ repeat: isActive ? Infinity : 0, duration: 1 }}
+                className={`rounded-xl border p-2 text-xs transition-all ${
+                  isActive 
+                    ? `${bin.border} bg-white/15 shadow-lg shadow-emerald-500/20 font-bold` 
+                    : "border-white/10 bg-white/5 opacity-60"
+                }`}
+              >
+                <div className="text-base">{bin.icon}</div>
+                <div className="mt-1 text-[11px] font-medium text-slate-200">{bin.label}</div>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        {/* Progress Bar */}
+        <div className="mt-6">
+          <div className="mb-1.5 flex justify-between text-xs font-semibold text-slate-400">
+            <span>AI Verification Progress</span>
+            <span className="text-emerald-400">{progress}%</span>
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full border border-white/10 bg-slate-800/80 p-0.5">
+            <motion.div 
+              className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-400 to-sky-400 shadow-sm shadow-emerald-500/50"
+              animate={{ width: `${progress}%` }}
+              transition={{ ease: "easeOut", duration: 0.4 }}
+            />
+          </div>
+        </div>
+
+        {/* Footer Note */}
+        <p className="mt-5 text-center text-[11px] text-slate-400">
+          💡 <span className="text-slate-300">Fun Fact:</span> Source-segregated waste powers biogas production in Chandigarh!
         </p>
       </motion.div>
     </motion.div>
@@ -207,6 +477,7 @@ export default function SubmitWastePage() {
   const [photos, setPhotos] = useState<PhotoMap>(emptyPhotos);
   const [location, setLocation] = useState<{ lat?: number; lng?: number; status: "loading" | "ready" | "unavailable" }>({ status: "loading" });
   const [submitting, setSubmitting] = useState(false);
+  const [pendingBody, setPendingBody] = useState<FormData | null>(null);
   const [error, setError] = useState("");
   
   const requiredComplete = bins.filter(bin => bin.required).every(bin => photos[bin.type].length > 0);
@@ -245,7 +516,6 @@ export default function SubmitWastePage() {
     if (!profile?.householdId) { setError("Set up your household before checking your bins."); return; }
     if (!requiredComplete) { setError("Please add at least one photo for the mandatory Green, Blue, and Red bins."); return; }
     
-    setSubmitting(true);
     setError("");
     
     let latest = location;
@@ -260,7 +530,6 @@ export default function SubmitWastePage() {
     }
     
     if (!latest.lat || !latest.lng) {
-      setSubmitting(false);
       setError("Location is needed to confirm you are at your registered household.");
       return;
     }
@@ -274,20 +543,27 @@ export default function SubmitWastePage() {
       body.append("binTypes", bin.type);
     }));
 
-    try {
-      const result = await api.submitBins(body);
-      sessionStorage.setItem("lastSubmissionResult", JSON.stringify(result));
-      router.push("/citizen/submit/result");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to analyze your bins right now. Please try again.");
-      setSubmitting(false);
-    }
+    setPendingBody(body);
+    setSubmitting(true);
   }
 
   return (
     <main className="min-h-screen bg-slate-50/50 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] text-slate-950 selection:bg-emerald-200">
       <AnimatePresence>
-        {submitting && <ProcessingOverlay />}
+        {submitting && pendingBody && (
+          <MunicipalityTruckOverlay
+            pendingBody={pendingBody}
+            onComplete={(result) => {
+              sessionStorage.setItem("lastSubmissionResult", JSON.stringify(result));
+              router.push("/citizen/submit/result");
+            }}
+            onError={(errMsg) => {
+              setError(errMsg);
+              setSubmitting(false);
+              setPendingBody(null);
+            }}
+          />
+        )}
       </AnimatePresence>
 
       <div className="grid min-h-screen lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -327,7 +603,7 @@ export default function SubmitWastePage() {
             className="mt-8 grid gap-4 rounded-2xl border border-slate-200/60 bg-white/40 p-4 shadow-sm backdrop-blur-xl sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.25fr_1fr_auto] lg:items-center"
           >
             <StatusItem icon={<CalendarDays className="size-5" />} label="Submission Date" value={new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date())} />
-            <StatusItem icon={<ShieldCheck className="size-5" />} label="Attempts Left" value={`3 / 3`} detail="Daily limit" />
+            <StatusItem icon={<ShieldCheck className="size-5" />} label="Attempts Left" value={`5 / 5`} detail="Daily limit" />
             <StatusItem icon={<LocateFixed className="size-5" />} label="Location Status" value={location.status === "ready" ? "Location ready" : location.status === "loading" ? "Checking location" : "Location unavailable"} detail={location.status === "ready" ? "Within registered household area" : undefined} />
             <StatusItem icon={<LocateFixed className="size-5" />} label="Coordinates" value={location.lat ? `${location.lat.toFixed(4)} N` : "--"} detail={location.lng ? `${location.lng.toFixed(4)} E` : undefined} />
             

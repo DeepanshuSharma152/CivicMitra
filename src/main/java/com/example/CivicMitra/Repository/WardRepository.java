@@ -18,4 +18,7 @@ public interface WardRepository extends JpaRepository<Ward, Long> {
 
     // Check if we even cover this sector yet
     boolean existsBySectorName(String sectorName);
+
+    // All wards for a given municipality — used for the household-setup ward dropdown
+    List<Ward> findByMunicipality_MunicipalityId(Long municipalityId);
 }

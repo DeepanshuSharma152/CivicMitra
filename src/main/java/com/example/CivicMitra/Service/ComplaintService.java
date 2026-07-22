@@ -130,14 +130,17 @@ public class ComplaintService {
                 StandardCopyOption.REPLACE_EXISTING);
 
         byte[] imageBytes = image.getBytes();
-        WasteAnalysis aiResult = wasteAiService.analyzeWasteImage(imageBytes,image.getOriginalFilename());
+        // Use batch API with a single image (analyzeWasteImage was removed in the Ollama migration)
+        WasteAnalysis aiResult = wasteAiService.analyzeAllBins(
+                List.of(new WasteAiService.ImagePayload(imageBytes, "UNKNOWN"))
+        ).get(0);
 
         // FIX: replaces ChandigarhFacility enum — lookup from DB
         TreatmentFacility facility = facilityRepository
-                .findById(aiResult.facilityKey())
+                .findById(aiResult.getFacilityKey())
                 .orElseGet(() -> {
                     System.out.println(
-                            "WARN: Unknown facilityKey from AI: " + aiResult.facilityKey());
+                            "WARN: Unknown facilityKey from AI: " + aiResult.getFacilityKey());
                     return null;
                 });
 
@@ -151,8 +154,8 @@ public class ComplaintService {
         complaint.setUpvotes(0);
 
         // FIX: categories is a Set, not a String field
-        if (aiResult.category() != null) {
-            complaint.getCategories().add(aiResult.category());
+        if (aiResult.getCategory() != null) {
+            complaint.getCategories().add(aiResult.getCategory());
         }
 
         // Metadata
@@ -162,10 +165,10 @@ public class ComplaintService {
         metadata.setDeviceLng(dto.getDeviceLng());
         metadata.setReportedLat(dto.getReportedLat());
         metadata.setReportedLng(dto.getReportedLng());
-        metadata.setAiConfidence(aiResult.confidence());
-        metadata.setLocationConsistency(aiResult.locationConsistency());
+        metadata.setAiConfidence(aiResult.getConfidence());
+        metadata.setLocationConsistency(aiResult.getLocationConsistency());
         metadata.setAiSuspicious(aiResult.isSuspicious());
-        metadata.setAiDescription(aiResult.aiDescription());
+        metadata.setAiDescription(aiResult.getAiDescription());
 
         int initialTrustScore = trustService.calculateTrustScore(
                 aiResult,
@@ -184,8 +187,8 @@ public class ComplaintService {
         auditLog.setScoreBreakdown(String.format(
                 "{\"trigger\":\"create\",\"aiConfidence\":%.2f," +
                         "\"locationConsistency\":\"%s\",\"isSuspicious\":%b,\"userRep\":%.1f}",
-                aiResult.confidence(),
-                aiResult.locationConsistency(),
+                aiResult.getConfidence(),
+                aiResult.getLocationConsistency(),
                 aiResult.isSuspicious(),
                 user.getReputationScore()));
         complaint.getAuditLogs().add(auditLog);

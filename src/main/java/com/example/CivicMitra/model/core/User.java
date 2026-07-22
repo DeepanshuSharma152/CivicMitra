@@ -7,6 +7,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -58,6 +59,18 @@ public class User {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ward_id")
     private Ward ward;
+
+    // ── DPDP Consent (Digital Personal Data Protection Act 2023) ────────────
+    /** True once the citizen has explicitly accepted the consent screen */
+    @Column(nullable = false)
+    private boolean dpdpConsentGiven = false;
+
+    /** Timestamp when consent was recorded */
+    private LocalDateTime dpdpConsentAt;
+
+    /** Version of the consent text shown, for future audit trail */
+    @Column(nullable = false)
+    private String dpdpConsentVersion = "1.0";
 
     public Long getId() {
         return id;

@@ -15,9 +15,9 @@ public class TrustService {
 
         // 1. AI Logic
         if (ai != null) {
-            if ("HIGH".equals(ai.locationConsistency())) score += 15;
+            if ("HIGH".equals(ai.getLocationConsistency())) score += 15;
             if (ai.isSuspicious()) score -= 40;
-            score += (int)(ai.confidence() * 10);
+            score += (int)(ai.getConfidence() * 10);
         }
 
         // 2. Proximity Check (Device vs Reported)
