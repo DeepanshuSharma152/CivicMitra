@@ -29,11 +29,13 @@ async function request<T>(path: string, init: RequestInit = {}, authenticated = 
 export const api = {
   // ── Auth ──────────────────────────────────────────────────────────────────
   login: (email: string, password: string) => request<{ token: string; email: string; name: string; role: UserRole; userId: number }>("/api/v1/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }, false),
+  sendLoginOtp: (email: string) => request<OtpSendResult>(`/api/v1/auth/login-otp/send?email=${encodeURIComponent(email)}`, { method: "POST" }, false),
+  verifyLoginOtp: (email: string, pass: string, otp: string) => request<{ token: string; email: string; name: string; role: UserRole; userId: number }>("/api/v1/auth/login-otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: pass, otp }) }, false),
   register: (body: Record<string, unknown>) => request("/api/v1/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, false),
 
-  // ── OTP (unauthenticated — used during registration flow) ─────────────────
-  sendOtp: (phone: string) => request<OtpSendResult>(`/api/v1/otp/send?phone=${encodeURIComponent(phone)}`, { method: "POST" }, false),
-  verifyOtp: (phone: string, otp: string) => request<{ status: string; message: string }>(`/api/v1/otp/verify?phone=${encodeURIComponent(phone)}&otp=${encodeURIComponent(otp)}`, { method: "POST" }, false),
+  // ── OTP (unauthenticated — used during registration & login flows) ─────────
+  sendOtp: (phone: string) => request<OtpSendResult>(`/api/v1/otp/send?identifier=${encodeURIComponent(phone)}`, { method: "POST" }, false),
+  verifyOtp: (phone: string, otp: string) => request<{ status: string; message: string }>(`/api/v1/otp/verify?identifier=${encodeURIComponent(phone)}&otp=${encodeURIComponent(otp)}`, { method: "POST" }, false),
 
   // ── DPDP Consent ─────────────────────────────────────────────────────────
   getDpdpStatus: () => request<DPDPStatus>("/api/v1/consent/dpdp/status"),
@@ -44,6 +46,7 @@ export const api = {
   registerHousehold: (body: { houseNumber: string; wardId: number; blockCode?: string; mobile: string; lat: number; lng: number; numResidents?: number }) =>
     request<HouseholdRegistrationResult>("/api/v1/households/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   getWards: (municipalityId: number) => request<WardOption[]>(`/api/v1/households/wards?municipalityId=${municipalityId}`),
+  getStreak: (householdId: number) => request<{ currentStreakDays: number; longestStreakDays: number; totalVerifiedPickups: number; greenPoints: number; verificationStatus: string }>(`/api/v1/households/${householdId}/streak`),
 
   // ── Dashboard ─────────────────────────────────────────────────────────────
   profile: () => request<Profile>("/api/v1/dashboard/profile"),

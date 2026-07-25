@@ -147,14 +147,7 @@ public class SegregationController {
 
         return switch (submission.getStatus()) {
 
-            case APPROVED -> ResponseEntity.ok(Map.of(
-                    "status",       "APPROVED",
-                    "submissionId", submissionId,
-                    "qrToken",      submission.getQrToken() != null
-                                        ? submission.getQrToken().getToken()
-                                        : "",
-                    "message", "Verification successful. Show QR to your sanitation worker."
-            ));
+            case APPROVED -> ResponseEntity.ok(segregationService.getQRForSubmission(submissionId));
 
             case PENDING_RETRY -> ResponseEntity.ok(Map.of(
                     "status",       "PENDING_RETRY",

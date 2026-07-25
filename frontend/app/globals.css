@@ -26,3 +26,29 @@ a {
   color: inherit;
   text-decoration: none;
 }
+
+/* Force high-contrast white text on green primary buttons and links */
+a.bg-\[\#047857\],
+a.bg-\[\#044e3a\],
+button.bg-\[\#047857\],
+button.bg-\[\#044e3a\],
+a.bg-emerald-700,
+button.bg-emerald-700,
+a.bg-emerald-800,
+button.bg-emerald-800,
+.primary-button {
+  color: #ffffff !important;
+}
+
+a.bg-\[\#047857\] *,
+a.bg-\[\#044e3a\] *,
+button.bg-\[\#047857\] *,
+button.bg-\[\#044e3a\] *,
+a.bg-emerald-700 *,
+button.bg-emerald-700 *,
+a.bg-emerald-800 *,
+button.bg-emerald-800 *,
+.primary-button * {
+  color: #ffffff !important;
+}
+

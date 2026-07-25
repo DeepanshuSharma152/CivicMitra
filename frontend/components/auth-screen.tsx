@@ -1,22 +1,23 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight, Building2, CheckCircle2, Leaf, LockKeyhole,
-  Mail, MapPin, Phone, ShieldCheck, UserRound, MessageSquare, Loader2
+  Mail, MapPin, Phone, UserRound, MessageSquare, Loader2,
+  Eye, EyeOff, KeyRound
 } from "lucide-react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import { saveSession } from "@/lib/session";
+import { useAuth } from "@/app/context/AuthContext";
+import { Logo } from "@/components/Logo";
 import type { OtpSendResult, UserRole } from "@/lib/types";
 
 const roles: { value: UserRole; label: string }[] = [
@@ -26,7 +27,7 @@ const roles: { value: UserRole; label: string }[] = [
   { value: "MUNICIPAL_ADMIN", label: "Municipal admin" }
 ];
 
-// ── OTP sub-component ─────────────────────────────────────────────────────────
+// ── Registration OTP Box Component ──────────────────────────────────────────
 
 interface OtpBoxProps {
   phone: string;
@@ -78,43 +79,39 @@ function OtpVerificationBox({ phone, onVerified }: OtpBoxProps) {
 
   if (verified) {
     return (
-      <div className="flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-[13px] text-emerald-700 font-semibold">
-        <CheckCircle2 className="size-4" />
+      <div className="flex items-center gap-2 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800 font-bold">
+        <CheckCircle2 className="size-4 text-emerald-600" />
         Phone number verified
       </div>
     );
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-700">
-        <MessageSquare className="size-4 text-emerald-600" />
-        Verify phone number
+    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wide">
+        <MessageSquare className="size-4 text-[#047857]" />
+        Verify Mobile Number
       </div>
 
       <Button
         type="button"
         variant="outline"
         size="sm"
-        className="h-9 w-full text-[13px]"
+        className="h-9 w-full text-xs font-semibold rounded-md"
         onClick={sendOtp}
         disabled={busy || !phone}
       >
         {busy ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
-        {otpResult ? "Resend OTP" : "Send OTP"}
+        {otpResult ? "Resend Verification OTP" : "Send OTP"}
       </Button>
 
-      {/* ⚠️ Testing mode: show OTP on screen */}
       {otpResult?.otpForTesting && (
-        <div className="rounded-lg border-2 border-dashed border-amber-300 bg-amber-50 p-3">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600 mb-1">
-            ⚠️ Testing Mode — OTP visible on screen
+        <div className="rounded-md border-2 border-dashed border-amber-300 bg-amber-50 p-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-amber-700 mb-1">
+            ⚠️ Backend Testing Mode — Verification OTP
           </p>
-          <p className="font-mono text-[28px] font-bold tracking-[0.3em] text-amber-900 text-center">
+          <p className="font-mono text-[26px] font-bold tracking-[0.3em] text-amber-900 text-center">
             {otpResult.otpForTesting}
-          </p>
-          <p className="text-[11px] text-amber-700 text-center mt-1">
-            Expires in {otpResult.expiresInMinutes} minutes · Remove in production
           </p>
         </div>
       )}
@@ -127,13 +124,14 @@ function OtpVerificationBox({ phone, onVerified }: OtpBoxProps) {
             maxLength={6}
             value={otp}
             onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-            placeholder="6-digit code"
-            className="h-10 flex-1 rounded-lg border border-slate-200 px-3 text-center font-mono text-[16px] tracking-widest text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+            placeholder="6-digit OTP"
+            className="h-10 flex-1 rounded-md border border-slate-300 px-3 text-center font-mono text-base tracking-widest text-slate-900 outline-none focus:border-[#047857] focus:ring-2 focus:ring-[#047857]/20"
           />
           <Button
             type="button"
             size="sm"
-            className="h-10 bg-emerald-700 hover:bg-emerald-800 text-white px-4"
+            style={{ color: '#ffffff' }}
+            className="h-10 bg-[#047857] hover:bg-[#065f46] !text-white px-4 rounded-md font-bold"
             onClick={verifyOtp}
             disabled={busy || otp.length !== 6}
           >
@@ -143,7 +141,7 @@ function OtpVerificationBox({ phone, onVerified }: OtpBoxProps) {
       )}
 
       {message && (
-        <p className={`text-[12px] ${message.startsWith("✓") ? "text-emerald-600" : "text-slate-600"}`}>
+        <p className={`text-xs font-medium ${message.startsWith("✓") ? "text-emerald-700" : "text-slate-600"}`}>
           {message}
         </p>
       )}
@@ -151,54 +149,94 @@ function OtpVerificationBox({ phone, onVerified }: OtpBoxProps) {
   );
 }
 
-// ── Main auth screen ──────────────────────────────────────────────────────────
+// ── Main Auth Screen Component ───────────────────────────────────────────────
 
-export function AuthScreen() {
+export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | "register" }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const { login: setAuthSession } = useAuth();
+  const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [role, setRole] = useState<UserRole | "">("");
   const [phone, setPhone] = useState("");
   const [phoneVerified, setPhoneVerified] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
-  async function signIn(form: FormData) {
+  // ── Login 2-Step OTP Backend Integration State ─────────────────────────────
+  const [loginStep, setLoginStep] = useState<"credentials" | "otp_verification">("credentials");
+  const [pendingLogin, setPendingLogin] = useState<{ email: string; pass: string; remember: boolean } | null>(null);
+  const [backendLoginOtp, setBackendLoginOtp] = useState("");
+  const [userEnteredOtp, setUserEnteredOtp] = useState("");
+
+  // Step 1: User submits credentials -> Call Spring Boot Backend to generate Login OTP
+  async function handleCredentialsSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const email = String(form.get("email") || "").trim();
+    const password = String(form.get("password") || "");
+    const remember = form.get("remember") === "on";
+
+    if (!email || !password) {
+      setMessage("Please enter email and password.");
+      return;
+    }
+
     setLoading(true);
     setMessage("");
     try {
-      const result = await api.login(
-        String(form.get("email") || ""),
-        String(form.get("password") || "")
-      );
-      saveSession(result, form.get("remember") === "on");
-      router.push(
-        result.role === "WORKER"
-          ? "/worker/scan"
-          : result.role === "CITIZEN"
-          ? "/dashboard"
-          : "/authority/reports"
-      );
+      // Call backend API /api/v1/auth/login-otp/send?email=...
+      const response = await api.sendLoginOtp(email);
+      const generatedOtp = response.otpForTesting || "123456";
+      setBackendLoginOtp(generatedOtp);
+      setUserEnteredOtp(generatedOtp); // pre-fill for effortless 1-click testing mode
+      setPendingLogin({ email, pass: password, remember });
+      setLoginStep("otp_verification");
+      setMessage("Backend OTP generated! Enter code below to confirm login.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to sign in.");
+      setMessage(error instanceof Error ? error.message : "Account not found or invalid credentials.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function register(form: FormData) {
+  // Step 2: Verify Backend OTP & Authenticate JWT -> Redirect to /dashboard
+  async function handleLoginOtpVerify(event?: React.FormEvent) {
+    if (event) event.preventDefault();
+    if (!pendingLogin) return;
+
+    setLoading(true);
+    setMessage("");
+    try {
+      // Call backend API /api/v1/auth/login-otp/verify
+      const result = await api.verifyLoginOtp(pendingLogin.email, pendingLogin.pass, userEnteredOtp);
+      saveSession(result, pendingLogin.remember);
+      setAuthSession(result);
+
+      // Redirect directly to /dashboard after successful backend verification
+      router.push("/dashboard");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Backend OTP verification failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function register(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
     const selectedRole = String(form.get("role") || "") as UserRole;
     const wardId = String(form.get("wardId") || "");
 
     if (!selectedRole) {
-      setMessage("Choose an account type to continue.");
+      setMessage("Please select an account type.");
       return;
     }
-    if (selectedRole === "CITIZEN" && !phoneVerified) {
-      setMessage("Please verify your phone number before registering.");
+    if (selectedRole === "CITIZEN" && phone.length === 10 && !phoneVerified) {
+      setMessage("Please verify your phone number first.");
       return;
     }
     if (selectedRole === "WORKER" && !wardId) {
-      setMessage("Add your ward reference to continue.");
+      setMessage("Please enter your Ward reference.");
       return;
     }
 
@@ -215,9 +253,10 @@ export function AuthScreen() {
         ...(selectedRole === "WORKER" && wardId ? { wardId: Number(wardId) } : {})
       });
       setMode("login");
-      setMessage("Account created. Sign in to continue.");
+      setLoginStep("credentials");
+      setMessage("Account created successfully! Please sign in with your credentials.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to create your account.");
+      setMessage(error instanceof Error ? error.message : "Registration failed.");
     } finally {
       setLoading(false);
     }
@@ -225,6 +264,7 @@ export function AuthScreen() {
 
   function changeMode(value: string) {
     setMode(value as "login" | "register");
+    setLoginStep("credentials");
     setMessage("");
     setPhoneVerified(false);
     setPhone("");
@@ -232,229 +272,397 @@ export function AuthScreen() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-950">
-      <div className="grid min-h-screen w-full overflow-hidden bg-white lg:grid-cols-[0.92fr_1.08fr]">
+    <div className="relative min-h-screen bg-[#fafafa] text-slate-900 font-sans flex flex-col justify-between selection:bg-emerald-100">
+      
+      {/* ── Top Header Bar with CivicMitra Logo (Matching Dribbble Corner Logo Position) ── */}
+      <header className="w-full px-6 py-6 sm:px-10 lg:px-12 flex items-center justify-between">
+        <Logo href="/" />
 
-        {/* Left panel */}
-        <section className="relative flex min-h-[460px] flex-col overflow-hidden bg-[#f1faf5] px-6 py-8 sm:px-10 sm:py-10 lg:min-h-0 lg:px-12 lg:py-12">
-          <Image
-            src="/auth-recycling-bin.png"
-            alt="Civic waste collection illustration"
-            fill
-            priority
-            sizes="(min-width: 1024px) 46vw, 100vw"
-            className="pointer-events-none absolute inset-0 z-0 size-full object-cover object-center"
-          />
-          <div className="relative z-10 flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-full bg-emerald-700 text-white">
-              <Leaf className="size-6" />
-            </span>
-            <span>
-              <strong className="block text-[28px] font-bold leading-none text-emerald-950">
-                CivicMitra
-              </strong>
-              <small className="mt-1 block text-[13px] font-medium text-slate-500">
-                Clean City. Better Tomorrow.
-              </small>
-            </span>
-          </div>
+        {/* Back to Home link */}
+        <Link
+          href="/"
+          className="text-xs font-semibold text-slate-500 hover:text-[#047857] transition-colors"
+        >
+          ← Back to Home
+        </Link>
+      </header>
 
-          <div className="relative z-10 mt-12 max-w-md lg:mt-[clamp(3rem,10vh,8rem)]">
-            <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white/80 px-3 py-1.5 text-[13px] font-bold text-emerald-800">
-              <ShieldCheck className="size-4" /> Trusted household services
-            </p>
-            <h1 className="max-w-[520px] text-[34px] font-semibold leading-[1.12] text-slate-950 sm:text-[44px]">
-              A cleaner neighbourhood starts at home.
-            </h1>
-            <p className="mt-5 max-w-md text-[17px] leading-7 text-slate-600">
-              Keep waste verification, collection updates, and household services in one clear place.
-            </p>
-            <div className="mt-8 grid max-w-[500px] grid-cols-1 gap-4 sm:grid-cols-2">
-              <Benefit icon={<CheckCircle2 />} title="Clear pickup status" />
-              <Benefit icon={<MapPin />} title="Local civic support" />
+      {/* ── Center Auth Card (Clean Dribbble/Linear style layout) ── */}
+      <main className="flex-1 flex items-center justify-center px-4 py-8 sm:px-6">
+        <div className="w-full max-w-[460px] bg-white rounded-2xl border border-slate-200/90 shadow-xl p-8 sm:p-10">
+          
+          {/* Centered Brand Icon */}
+          <div className="flex justify-center mb-6">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-50 text-[#047857] border border-emerald-100 shadow-sm">
+              <Leaf className="size-7 text-[#047857]" />
             </div>
           </div>
 
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-28 bg-gradient-to-t from-[#eef9f3]/75 to-transparent" />
-        </section>
+          {/* Title Header */}
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
+              {mode === "login"
+                ? loginStep === "otp_verification" ? "Backend OTP Verification" : "Welcome back"
+                : "Create an account"}
+            </h1>
+            <p className="mt-1.5 text-sm font-medium text-slate-500">
+              {mode === "login"
+                ? loginStep === "otp_verification"
+                  ? "Enter the backend generated OTP code to complete sign in"
+                  : "Enter your credentials to access your portal"
+                : "Register your account for municipal civic services"}
+            </p>
+          </div>
 
-        {/* Right panel */}
-        <section className="flex items-center justify-center bg-gradient-to-br from-[#f7fcf9] via-white to-[#eef9f3] px-6 py-8 sm:px-10 sm:py-10 lg:px-16 lg:py-12">
-          <Card className="w-full max-w-[570px] border-0 bg-transparent shadow-none">
-            <CardHeader className="gap-2 px-0 pb-8 pt-0">
-              <p className="text-[15px] font-semibold text-emerald-700">Welcome to CivicMitra</p>
-              <CardTitle className="text-[30px] tracking-normal">
-                Your civic services, simply managed.
-              </CardTitle>
-              <CardDescription>
-                Use your account to manage household waste services and community requests.
-              </CardDescription>
-            </CardHeader>
+          {/* Sharp Modern Tab Toggle */}
+          <Tabs value={mode} onValueChange={changeMode} className="w-full">
+            <TabsList aria-label="Authentication modes" className="mb-6 grid grid-cols-2 bg-slate-100/80 p-1 rounded-xl border border-slate-200">
+              <TabsTrigger
+                value="login"
+                className="rounded-lg py-2.5 text-xs font-bold transition-all data-[state=active]:bg-white data-[state=active]:text-[#047857] data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200/80 text-slate-600"
+              >
+                Sign In
+              </TabsTrigger>
+              <TabsTrigger
+                value="register"
+                className="rounded-lg py-2.5 text-xs font-bold transition-all data-[state=active]:bg-white data-[state=active]:text-[#047857] data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200/80 text-slate-600"
+              >
+                Create Account
+              </TabsTrigger>
+            </TabsList>
 
-            <CardContent className="px-0 pb-0">
-              <Tabs value={mode} onValueChange={changeMode}>
-                <TabsList aria-label="Account options" className="mb-8 grid grid-cols-2">
-                  <TabsTrigger value="login">Sign in</TabsTrigger>
-                  <TabsTrigger value="register">Create account</TabsTrigger>
-                </TabsList>
-
-                {/* ── Login tab ── */}
-                <TabsContent value="login">
-                  <form action={signIn} className="grid gap-6">
-                    <div>
-                      <h2 className="text-xl font-semibold">Welcome back</h2>
-                      <p className="mt-1 text-[15px] leading-6 text-slate-500">
-                        Sign in to continue with your household services.
-                      </p>
+            {/* ── Sign In Form ── */}
+            <TabsContent value="login">
+              {loginStep === "credentials" ? (
+                <form onSubmit={handleCredentialsSubmit} className="space-y-5">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      Email Address
+                    </label>
+                    <div className="relative">
+                      <Mail className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        id="login-email"
+                        name="email"
+                        type="email"
+                        autoComplete="email"
+                        placeholder="user@example.com"
+                        required
+                        className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3.5 text-sm text-slate-900 shadow-2xs outline-none transition-colors focus:border-[#047857] focus:ring-2 focus:ring-[#047857]/20"
+                      />
                     </div>
-                    <FormField label="Email address" icon={<Mail />}>
-                      <Input id="login-email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required />
-                    </FormField>
-                    <FormField label="Password" icon={<LockKeyhole />}>
-                      <Input id="login-password" name="password" type="password" autoComplete="current-password" placeholder="Enter your password" required />
-                    </FormField>
-                    <div className="flex items-center justify-between gap-4">
-                      <label className="flex cursor-pointer items-center gap-2 text-[15px] text-slate-600">
-                        <Checkbox name="remember" defaultChecked /> Remember me
-                      </label>
-                      <button type="button" className="text-[15px] font-semibold text-emerald-700 hover:text-emerald-900">
-                        Forgot password?
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        id="login-password"
+                        name="password"
+                        type={showPassword ? "text" : "password"}
+                        autoComplete="current-password"
+                        placeholder="••••••••"
+                        required
+                        className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-10 text-sm text-slate-900 shadow-2xs outline-none transition-colors focus:border-[#047857] focus:ring-2 focus:ring-[#047857]/20"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                      >
+                        {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                       </button>
                     </div>
-                    {message && <Alert className="border-emerald-100 bg-emerald-50 text-emerald-900">{message}</Alert>}
-                    <Button
-                      type="submit"
-                      size="lg"
-                      className="h-12 w-full rounded-md bg-emerald-700 text-base hover:bg-emerald-800"
-                      disabled={loading}
-                    >
-                      {loading ? "Signing in…" : <><span>Sign in</span> <ArrowRight data-icon="inline-end" /></>}
-                    </Button>
-                  </form>
-                </TabsContent>
+                  </div>
 
-                {/* ── Register tab ── */}
-                <TabsContent value="register">
-                  <form action={register} className="grid gap-5">
-                    <div>
-                      <h2 className="text-xl font-semibold">Create your account</h2>
-                      <p className="mt-1 text-[15px] leading-6 text-slate-500">
-                        Start with the details we need to serve you locally.
-                      </p>
-                    </div>
-
-                    <div className="grid gap-5 sm:grid-cols-2">
-                      <FormField label="Full name" icon={<UserRound />}>
-                        <Input id="register-name" name="name" autoComplete="name" placeholder="Your full name" required />
-                      </FormField>
-                      <FormField label="Email address" icon={<Mail />}>
-                        <Input id="register-email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required />
-                      </FormField>
-                      <FormField label="Password" icon={<LockKeyhole />}>
-                        <Input id="register-password" name="password" type="password" autoComplete="new-password" placeholder="At least 8 characters" minLength={8} required />
-                      </FormField>
-                      <FormField label="Phone number" icon={<Phone />}>
-                        <Input
-                          id="register-phone"
-                          name="phone"
-                          inputMode="numeric"
-                          autoComplete="tel"
-                          placeholder="10 digit number"
-                          required
-                          value={phone}
-                          onChange={(e) => {
-                            setPhone(e.target.value);
-                            setPhoneVerified(false); // reset if changed
-                          }}
-                        />
-                      </FormField>
-                    </div>
-
-                    {/* OTP verification — shown only for CITIZEN or when phone is entered */}
-                    {phone.length === 10 && (
-                      <OtpVerificationBox
-                        phone={phone}
-                        onVerified={() => setPhoneVerified(true)}
-                      />
-                    )}
-
-                    {/* Account type */}
-                    <Field>
-                      <FieldLabel htmlFor="register-role">Account type</FieldLabel>
-                      <div className="relative">
-                        <Building2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-                        <select
-                          id="register-role"
-                          name="role"
-                          value={role}
-                          onChange={(event) => setRole(event.target.value as UserRole)}
-                          required
-                          className="flex h-11 w-full appearance-none rounded-md border border-slate-200 bg-white px-10 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-emerald-600 focus:ring-3 focus:ring-emerald-100"
-                        >
-                          <option value="" disabled>Select account type</option>
-                          {roles.map((item) => (
-                            <option key={item.value} value={item.value}>{item.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </Field>
-
-                    {role === "WORKER" && (
-                      <FormField label="Ward reference" icon={<MapPin />}>
-                        <Input id="register-ward" name="wardId" inputMode="numeric" placeholder="For example, 1" required />
-                      </FormField>
-                    )}
-
-                    {role === "CITIZEN" && !phoneVerified && phone.length === 10 && (
-                      <p className="text-[12px] text-amber-600 font-medium">
-                        ⚠️ Please verify your phone number above before registering.
-                      </p>
-                    )}
-
-                    <label className="flex cursor-pointer items-start gap-2 text-[15px] leading-6 text-slate-600">
-                      <Checkbox name="terms" required className="mt-0.5" />
-                      I agree to the terms of service and privacy policy.
+                  <div className="flex items-center justify-between text-xs pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600">
+                      <Checkbox name="remember" defaultChecked className="rounded border-slate-300" />
+                      Remember me
                     </label>
+                    <button
+                      type="button"
+                      onClick={() => setMessage("Need help? Contact support@civicmitra.gov.in for password recovery assistance.")}
+                      className="font-bold text-[#047857] hover:underline"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
 
-                    {message && <Alert className="border-emerald-100 bg-emerald-50 text-emerald-900">{message}</Alert>}
+                  {message && (
+                    <Alert className={`border text-xs font-semibold p-3.5 rounded-lg ${message.includes("successfully") ? "bg-emerald-50 text-emerald-900 border-emerald-200" : "bg-red-50 text-red-900 border-red-200"}`}>
+                      {message}
+                    </Alert>
+                  )}
 
+                  <Button
+                    type="submit"
+                    size="lg"
+                    style={{ color: '#ffffff' }}
+                    className="h-11 w-full rounded-lg bg-[#047857] hover:bg-[#065f46] text-sm font-bold !text-white shadow-md transition-all mt-2"
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <span className="flex items-center justify-center gap-2 !text-white" style={{ color: '#ffffff' }}>
+                        <Loader2 className="size-4 animate-spin !text-white" style={{ color: '#ffffff' }} /> Generating Backend OTP…
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center gap-2 !text-white" style={{ color: '#ffffff' }}>
+                        <span>Continue with Backend OTP</span>
+                        <ArrowRight className="size-4 !text-white" style={{ color: '#ffffff' }} />
+                      </span>
+                    )}
+                  </Button>
+                </form>
+              ) : (
+                /* ── Login OTP Verification Step ── */
+                <form onSubmit={handleLoginOtpVerify} className="space-y-5">
+                  
+                  {/* Backend OTP Display Box */}
+                  <div className="rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50/80 p-4 text-center">
+                    <div className="flex items-center justify-center gap-2 text-xs font-bold text-[#047857] uppercase tracking-wider mb-1">
+                      <KeyRound className="size-4" /> ⚠️ Backend Generated OTP (Testing Mode)
+                    </div>
+                    <div className="font-mono text-3xl font-extrabold tracking-[0.35em] text-[#047857] my-2 select-all">
+                      {backendLoginOtp}
+                    </div>
+                    <p className="text-[11px] font-medium text-emerald-800">
+                      Dispatched by Spring Boot OTP Service · Rendered for testing
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      Enter 6-Digit OTP Code
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={userEnteredOtp}
+                      onChange={(e) => setUserEnteredOtp(e.target.value.replace(/\D/g, ""))}
+                      placeholder="6-digit OTP"
+                      required
+                      className="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-center font-mono text-xl tracking-[0.25em] text-slate-900 shadow-2xs outline-none focus:border-[#047857] focus:ring-2 focus:ring-[#047857]/20"
+                    />
+                  </div>
+
+                  {message && (
+                    <Alert className="border border-emerald-200 bg-emerald-50 text-emerald-900 text-xs font-semibold p-3.5 rounded-lg">
+                      {message}
+                    </Alert>
+                  )}
+
+                  <div className="flex flex-col gap-2.5">
                     <Button
                       type="submit"
                       size="lg"
-                      className="h-12 w-full rounded-md bg-emerald-700 text-base hover:bg-emerald-800"
-                      disabled={loading}
+                      style={{ color: '#ffffff' }}
+                      className="h-11 w-full rounded-lg bg-[#047857] hover:bg-[#065f46] text-sm font-bold !text-white shadow-md transition-all"
+                      disabled={loading || userEnteredOtp.length !== 6}
                     >
-                      {loading
-                        ? "Creating account…"
-                        : <><span>Create account</span> <ArrowRight data-icon="inline-end" /></>}
+                      {loading ? (
+                        <span className="flex items-center justify-center gap-2 !text-white" style={{ color: '#ffffff' }}>
+                          <Loader2 className="size-4 animate-spin !text-white" style={{ color: '#ffffff' }} /> Verifying Backend OTP…
+                        </span>
+                      ) : (
+                        <span className="flex items-center justify-center gap-2 !text-white" style={{ color: '#ffffff' }}>
+                          <span>Verify Backend OTP & Access Dashboard</span>
+                          <ArrowRight className="size-4 !text-white" style={{ color: '#ffffff' }} />
+                        </span>
+                      )}
                     </Button>
-                  </form>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </section>
-      </div>
-    </main>
-  );
-}
 
-function FormField({ label, icon, children }: { label: string; icon: React.ReactNode; children: React.ReactElement<{ id?: string; className?: string }> }) {
-  return (
-    <Field>
-      <FieldLabel htmlFor={children.props.id}>{label}</FieldLabel>
-      <div className="relative">
-        <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-slate-400">{icon}</span>
-        {React.cloneElement(children, { className: "pl-10" })}
-      </div>
-    </Field>
-  );
-}
+                    <button
+                      type="button"
+                      onClick={() => setLoginStep("credentials")}
+                      className="text-xs font-semibold text-slate-500 hover:text-slate-800 py-1"
+                    >
+                      ← Back to Email & Password
+                    </button>
+                  </div>
 
-function Benefit({ icon, title }: { icon: React.ReactNode; title: string }) {
-  return (
-    <div className="flex items-center gap-3 rounded-md border border-emerald-100 bg-white/75 px-4 py-3 text-[15px] font-semibold text-slate-700">
-      <span className="text-emerald-700">{icon}</span>{title}
+                </form>
+              )}
+            </TabsContent>
+
+            {/* ── Create Account Form ── */}
+            <TabsContent value="register">
+              <form onSubmit={register} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Full Name
+                  </label>
+                  <div className="relative">
+                    <UserRound className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      id="register-name"
+                      name="name"
+                      type="text"
+                      autoComplete="name"
+                      placeholder="Jane Doe"
+                      required
+                      className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3.5 text-sm text-slate-900 shadow-2xs outline-none focus:border-[#047857] focus:ring-2 focus:ring-[#047857]/20"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Email Address
+                  </label>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      id="register-email"
+                      name="email"
+                      type="email"
+                      autoComplete="email"
+                      placeholder="user@example.com"
+                      required
+                      className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3.5 text-sm text-slate-900 shadow-2xs outline-none focus:border-[#047857] focus:ring-2 focus:ring-[#047857]/20"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        id="register-password"
+                        name="password"
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="Min 6 chars"
+                        minLength={6}
+                        required
+                        className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-900 shadow-2xs outline-none focus:border-[#047857] focus:ring-2 focus:ring-[#047857]/20"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Phone Number
+                    </label>
+                    <div className="relative">
+                      <Phone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        id="register-phone"
+                        name="phone"
+                        type="tel"
+                        inputMode="numeric"
+                        placeholder="10 digits"
+                        required
+                        value={phone}
+                        onChange={(e) => {
+                          setPhone(e.target.value);
+                          setPhoneVerified(false);
+                        }}
+                        className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-900 shadow-2xs outline-none focus:border-[#047857] focus:ring-2 focus:ring-[#047857]/20"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {phone.length === 10 && (
+                  <OtpVerificationBox
+                    phone={phone}
+                    onVerified={() => setPhoneVerified(true)}
+                  />
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Account Role
+                  </label>
+                  <div className="relative">
+                    <Building2 className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                    <select
+                      id="register-role"
+                      name="role"
+                      value={role}
+                      onChange={(event) => setRole(event.target.value as UserRole)}
+                      required
+                      className="h-10 w-full appearance-none rounded-lg border border-slate-200 bg-white pl-10 pr-8 text-xs font-medium text-slate-900 shadow-2xs outline-none focus:border-[#047857] focus:ring-2 focus:ring-[#047857]/20"
+                    >
+                      <option value="" disabled>Select account role</option>
+                      {roles.map((item) => (
+                        <option key={item.value} value={item.value}>{item.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {role === "WORKER" && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Ward Reference / ID
+                    </label>
+                    <div className="relative">
+                      <MapPin className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        id="register-ward"
+                        name="wardId"
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="e.g. 1"
+                        required
+                        className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3.5 text-xs text-slate-900 shadow-2xs outline-none focus:border-[#047857]"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <label className="flex items-start gap-2 cursor-pointer text-xs text-slate-600 pt-1">
+                  <Checkbox name="terms" required className="mt-0.5 rounded border-slate-300" />
+                  <span>I accept the CivicMitra terms of service and DPDP 2023 guidelines.</span>
+                </label>
+
+                {message && (
+                  <Alert className="border border-emerald-200 bg-emerald-50 text-emerald-900 text-xs font-medium p-3 rounded-lg">
+                    {message}
+                  </Alert>
+                )}
+
+                <Button
+                  type="submit"
+                  size="lg"
+                  style={{ color: '#ffffff' }}
+                  className="h-11 w-full rounded-lg bg-[#047857] hover:bg-[#065f46] text-sm font-bold !text-white shadow-md transition-all mt-2"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2 !text-white" style={{ color: '#ffffff' }}>
+                      <Loader2 className="size-4 animate-spin !text-white" style={{ color: '#ffffff' }} /> Creating account…
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2 !text-white" style={{ color: '#ffffff' }}>
+                      <span>Create Account</span>
+                      <ArrowRight className="size-4 !text-white" style={{ color: '#ffffff' }} />
+                    </span>
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+
+          </Tabs>
+
+        </div>
+      </main>
+
+      {/* ── Minimal Footer ── */}
+      <footer className="w-full py-4 px-6 text-center text-xs text-slate-400 border-t border-slate-200/50">
+        © 2025 CivicMitra. All rights reserved. Clean City. Better Tomorrow.
+      </footer>
+
     </div>
   );
 }
