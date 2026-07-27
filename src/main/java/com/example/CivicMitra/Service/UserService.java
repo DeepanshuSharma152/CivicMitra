@@ -58,10 +58,16 @@ public class UserService {
     @Transactional
     public RegisterResponseDTO registerUser(RegisterRequestDTO dto) {
 
-        // ── Step 1: Email uniqueness check ───────────────────────
+        // ── Step 1: Email & Phone uniqueness checks ───────────────
         if (userRepository.findByEmail(dto.getEmail()).isPresent()) {
             throw new RuntimeException(
                     "Email '" + dto.getEmail() + "' is already registered.");
+        }
+        if (dto.getPhoneNumber() != null && !dto.getPhoneNumber().isBlank()) {
+            if (userRepository.findByPhoneNumber(dto.getPhoneNumber().trim()).isPresent()) {
+                throw new RuntimeException(
+                        "Phone number '" + dto.getPhoneNumber() + "' is already registered.");
+            }
         }
 
         // ── Step 2: Hash password ─────────────────────────────────

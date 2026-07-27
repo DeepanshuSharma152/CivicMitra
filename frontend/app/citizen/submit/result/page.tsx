@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { readSession } from "@/lib/session";
 import type { BinColor, Submission } from "@/lib/types";
+import { CitizenHeader } from "@/components/CitizenHeader";
 
 function formatDate(value?: string | null) {
   return value ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "--";
@@ -117,31 +118,7 @@ function ResultContent() {
 
   return (
     <main className="min-h-screen bg-slate-50/50 text-slate-950 pb-20">
-      <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-slate-200/60 bg-white/70 px-5 backdrop-blur-md sm:px-8">
-        <Link href="/dashboard" className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="size-10 rounded-full hover:bg-slate-100" aria-label="Back to dashboard">
-            <ArrowLeft className="size-5 text-slate-600" />
-          </Button>
-          <span className="hidden items-center gap-3 sm:flex">
-            <span className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-800 text-white shadow-sm">
-              <Leaf className="size-5" />
-            </span>
-            <span>
-              <strong className="block text-xl font-bold leading-none text-emerald-950">CivicMitra</strong>
-              <small className="block pt-1 text-[11px] font-medium text-slate-500">Clean City. Better Tomorrow.</small>
-            </span>
-          </span>
-        </Link>
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="relative size-10 rounded-full hover:bg-slate-100" aria-label="Notifications">
-            <Bell className="size-5 text-slate-600" />
-            <span className="absolute right-1 top-1 grid size-4 place-items-center rounded-full bg-rose-500 text-[10px] font-bold text-white shadow-sm">3</span>
-          </Button>
-          <span className="grid size-10 place-items-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-800 ring-2 ring-white">
-            {readSession()?.name?.[0] || "C"}
-          </span>
-        </div>
-      </header>
+      <CitizenHeader activeTab="submit" />
 
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:py-12">
         <div className="grid gap-8 lg:grid-cols-[1fr_400px] lg:items-start">

@@ -132,7 +132,8 @@ export function CitizenDashboard() {
   const pendingGrievances = complaints.filter(item => !["RESOLVED", "REJECTED"].includes(item.status)).length;
   const trustScore = approved.length ? Math.min(100, 55 + averageScore) : 60;
 
-  const firstName = profile?.name ? profile.name.split(" ")[0] : "Angad";
+  const sessionUser = readSession();
+  const firstName = profile?.name ? profile.name.split(" ")[0] : (sessionUser?.name ? sessionUser.name.split(" ")[0] : "User");
 
   return (
     <>
@@ -215,10 +216,14 @@ export function CitizenDashboard() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-slate-900 truncate">
-                        {myHousehold?.houseNumber || profile?.houseNumber ? `Household ID: ${myHousehold?.houseNumber || profile?.houseNumber || "22"}` : "Household ID: 22"}
+                        {myHousehold?.householdId || profile?.householdId
+                          ? `Household ID: ${myHousehold?.householdId || profile?.householdId}`
+                          : "No Household Registered"}
                       </p>
                       <p className="text-xs text-slate-500 truncate">
-                        {myHousehold?.ward || profile?.ward || "Add your home to begin"}
+                        {myHousehold?.householdId || profile?.householdId
+                          ? (myHousehold?.ward || profile?.ward || "No Ward")
+                          : "Add your home to begin"}
                       </p>
                     </div>
                   </div>

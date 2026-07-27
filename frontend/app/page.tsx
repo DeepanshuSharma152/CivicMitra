@@ -11,227 +11,112 @@ import {
   Recycle, HardHat, FileText, CheckCircle
 } from "lucide-react";
 
-import { useAuth } from "./context/AuthContext";
-import { Logo } from "@/components/Logo";
+import Navbar from "@/components/Navbar";
 
-// ── Navbar (Fixed White Background) ─────────────────────────────
-function Navbar() {
-  const [langOpen, setLangOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { session, logout, isLoading } = useAuth();
-
-  return (
-    <header className="fixed inset-x-0 top-0 z-50 h-20 border-b border-slate-200/80 bg-white shadow-xs">
-      <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        
-        {/* Brand Logo & Name */}
-        <Logo href="/" />
-
-        {/* Desktop Navigation Links */}
-        <nav className="hidden items-center gap-6 lg:flex">
-          <Link href="/" className="border-b-2 border-[#047857] py-1 text-[14px] font-semibold text-[#047857]">
-            Home
-          </Link>
-          <div className="group relative flex items-center gap-1 cursor-pointer py-1 text-[14px] font-medium text-slate-700 hover:text-[#047857]">
-            <span>Services</span>
-            <ChevronDown className="size-4 text-slate-400 group-hover:text-[#047857]" />
-          </div>
-          <Link href="/citizen/submit" className="py-1 text-[14px] font-medium text-slate-700 hover:text-[#047857]">
-            Track Request
-          </Link>
-          <Link href="/dashboard" className="py-1 text-[14px] font-medium text-slate-700 hover:text-[#047857]">
-            Dashboard
-          </Link>
-          <Link href="/dashboard#reports" className="py-1 text-[14px] font-medium text-slate-700 hover:text-[#047857]">
-            Reports
-          </Link>
-          <div className="group relative flex items-center gap-1 cursor-pointer py-1 text-[14px] font-medium text-slate-700 hover:text-[#047857]">
-            <span>Resources</span>
-            <ChevronDown className="size-4 text-slate-400 group-hover:text-[#047857]" />
-          </div>
-          <Link href="#about" className="py-1 text-[14px] font-medium text-slate-700 hover:text-[#047857]">
-            About Us
-          </Link>
-        </nav>
-
-        {/* Right CTA Actions */}
-        <div className="hidden items-center gap-4 lg:flex">
-          {/* Language Selector */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setLangOpen(!langOpen)}
-              className="flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              <Globe className="size-3.5 text-slate-500" />
-              <span>English</span>
-              <ChevronDown className="size-3.5 text-slate-400" />
-            </button>
-          </div>
-
-          {!isLoading && session ? (
-            <div className="flex items-center gap-3">
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-xs font-bold text-[#047857]">
-                <span className="size-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>{session.name} ({session.role})</span>
-              </div>
-              <Link
-                href={session.role === "WORKER" ? "/worker" : session.role === "CITIZEN" ? "/citizen" : "/dashboard"}
-                style={{ color: '#ffffff' }}
-                className="rounded-lg bg-[#047857] px-4 py-2 text-xs font-bold !text-white shadow-xs hover:bg-[#065f46] transition-all"
-              >
-                Go to Portal
-              </Link>
-              <button
-                onClick={logout}
-                type="button"
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all"
-              >
-                Sign Out
-              </button>
-            </div>
-          ) : (
-            <Link
-              href="/login"
-              style={{ color: '#ffffff' }}
-              className="rounded-lg bg-[#047857] px-5 py-2 text-sm font-semibold !text-white shadow-xs transition-all hover:bg-[#065f46]"
-            >
-              Sign In
-            </Link>
-          )}
-        </div>
-
-        {/* Mobile Menu Hamburger */}
-        <button
-          type="button"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="rounded-lg p-2 text-slate-700 hover:bg-slate-100 lg:hidden"
-        >
-          <span className="sr-only">Open menu</span>
-          <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
-
-      </div>
-
-      {/* Mobile Drawer */}
-      {mobileMenuOpen && (
-        <div className="border-b border-slate-200 bg-white px-4 py-4 shadow-lg lg:hidden">
-          <nav className="flex flex-col gap-3">
-            <Link href="/" className="font-semibold text-[#047857]">Home</Link>
-            <Link href="#services" className="font-medium text-slate-700">Services</Link>
-            <Link href="/citizen/submit" className="font-medium text-slate-700">Track Request</Link>
-            <Link href="/dashboard" className="font-medium text-slate-700">Dashboard</Link>
-            {!isLoading && session ? (
-              <div className="mt-2 flex flex-col gap-2 border-t border-slate-200 pt-3">
-                <div className="text-xs font-bold text-[#047857]">Logged in as {session.name} ({session.role})</div>
-                <Link
-                  href={session.role === "WORKER" ? "/worker" : session.role === "CITIZEN" ? "/citizen" : "/dashboard"}
-                  style={{ color: '#ffffff' }}
-                  className="rounded-lg bg-[#047857] py-2 text-center font-semibold !text-white"
-                >
-                  Go to Portal
-                </Link>
-                <button
-                  onClick={logout}
-                  type="button"
-                  className="rounded-lg border border-slate-300 py-2 text-center font-semibold text-slate-700"
-                >
-                  Sign Out
-                </button>
-              </div>
-            ) : (
-              <Link href="/login" style={{ color: '#ffffff' }} className="mt-2 inline-block rounded-lg bg-[#047857] py-2 text-center font-semibold !text-white">Sign In</Link>
-            )}
-          </nav>
-        </div>
-      )}
-    </header>
-  );
-}
-
-// ── Hero Section (Matching Shared Reference Image) ───────────────
+// ── Hero Section ─────────────────────────────────────────────────
 function HeroSection() {
   return (
-    <section className="relative pt-28 pb-16 bg-gradient-to-b from-emerald-50/40 via-sky-50/20 to-white overflow-hidden">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-          
-          {/* Left Column: Headline & Action Buttons */}
-          <div className="max-w-xl">
-            
-            {/* Pill Badge */}
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-[#047857] shadow-2xs mb-6">
-              <ShieldCheck className="size-4 text-[#047857]" />
-              <span>Trusted. Transparent. Together.</span>
-            </div>
+    <section
+      className="relative overflow-hidden bg-white"
+      style={{ minHeight: "calc(100vh - 72px)" }}
+    >
+      {/* Sky gradient that fills the right 56% — blends with the illustration */}
+      <div
+        className="absolute inset-y-0 right-0 hidden lg:block"
+        style={{
+          width: "56%",
+          background: "linear-gradient(150deg, #f0f9ff 0%, #bae6fd 25%, #7dd3fc 55%, #d1fae5 100%)",
+          zIndex: 0,
+        }}
+      />
+      {/* White feathered overlap so gradient merges smoothly into white left panel */}
+      <div
+        className="absolute inset-y-0 hidden lg:block"
+        style={{
+          left: "42%",
+          width: "12%",
+          background: "linear-gradient(to right, #ffffff 0%, transparent 100%)",
+          zIndex: 1,
+        }}
+      />
 
-            {/* Main Headline */}
-            <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl lg:text-[52px] leading-[1.15]">
-              Building cleaner cities{" "}
-              <span className="block text-[#047857]">for a better tomorrow</span>
-            </h1>
-
-            {/* Description */}
-            <p className="mt-5 text-base leading-relaxed text-slate-600 sm:text-lg">
-              CivicMitra is your one-stop platform to manage waste services, road infrastructure issues and civic grievances.
-            </p>
-
-            {/* Buttons */}
-            <div className="mt-8 flex flex-wrap items-center gap-4">
-              <Link
-                href="/grievances"
-                style={{ color: '#ffffff' }}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#047857] px-6 py-3.5 text-sm font-semibold !text-white shadow-md transition-all hover:bg-[#065f46] hover:shadow-lg"
-              >
-                <PlusCircle className="size-4 !text-white" style={{ color: '#ffffff' }} />
-                <span style={{ color: '#ffffff' }} className="!text-white">Report an Issue</span>
-              </Link>
-
-              <Link
-                href="/citizen/submit"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-sm font-semibold text-slate-700 shadow-2xs transition-all hover:bg-slate-50"
-              >
-                <Search className="size-4 text-slate-500" />
-                <span>Track Request</span>
-              </Link>
-            </div>
-
-            {/* Feature Highlights Row */}
-            <div className="mt-10 flex items-center gap-6 border-t border-slate-200/60 pt-6">
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                <Smile className="size-4 text-[#047857]" />
-                <span>Easy to Use</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                <Shield className="size-4 text-[#047857]" />
-                <span>Secure & Reliable</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                <Users className="size-4 text-[#047857]" />
-                <span>Citizen First</span>
-              </div>
-            </div>
-
+      {/* Left text content */}
+      <div
+        className="relative flex items-center px-4 sm:px-6 lg:px-16 xl:px-24"
+        style={{ minHeight: "calc(100vh - 72px)", zIndex: 10 }}
+      >
+        <div className="max-w-lg py-16 lg:py-0">
+          {/* Pill Badge */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200/80 bg-emerald-50/90 px-3.5 py-1.5 text-xs font-semibold text-[#047857] shadow-sm mb-6">
+            <ShieldCheck className="size-4 text-[#047857]" />
+            <span>Smarter. Transparent. Together.</span>
           </div>
 
-          {/* Right Column: Hero Truck Graphic Illustration */}
-          <div className="relative flex justify-center lg:justify-end">
-            <div className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-slate-100 bg-white p-2 shadow-xl">
-              <img
-                src="/truck-hero.png"
-                alt="CivicMitra Municipal Eco Truck"
-                className="w-full h-auto object-cover rounded-2xl"
-              />
-            </div>
+          {/* Main Headline */}
+          <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl lg:text-[56px] leading-[1.1]">
+            Building cleaner cities{" "}
+            <span className="block text-[#047857] mt-2">for a better tomorrow</span>
+          </h1>
+
+          {/* Description */}
+          <p className="mt-5 text-base leading-relaxed text-slate-600 sm:text-lg">
+            CivicMitra is your one-stop platform to manage waste services,
+            road infrastructure issues and civic grievances.
+          </p>
+
+          {/* Buttons */}
+          <div className="mt-8 flex flex-wrap items-center gap-4">
+            <Link
+              href="/grievances"
+              style={{ color: "#ffffff" }}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#047857] px-7 py-4 text-sm font-semibold !text-white shadow-md transition-all hover:bg-[#065f46] hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
+            >
+              <PlusCircle className="size-4" style={{ color: "#ffffff" }} />
+              <span style={{ color: "#ffffff" }}>Report an Issue</span>
+            </Link>
+            <Link
+              href="/citizen/submit"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white/80 backdrop-blur-sm px-7 py-4 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-white hover:border-slate-400 hover:-translate-y-0.5 active:translate-y-0"
+            >
+              <Search className="size-4 text-slate-500" />
+              <span>Track Request</span>
+            </Link>
           </div>
 
+          {/* Trust badges */}
+          <div className="mt-10 flex items-center gap-6 border-t border-slate-200/70 pt-6">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+              <Smile className="size-4 text-[#047857]" />
+              <span>Easy to Use</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+              <Shield className="size-4 text-[#047857]" />
+              <span>Secure &amp; Reliable</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+              <Users className="size-4 text-[#047857]" />
+              <span>Citizen First</span>
+            </div>
+          </div>
         </div>
+      </div>
+
+      {/* Truck illustration — absolutely positioned, covers full right half edge-to-edge */}
+      <div
+        className="absolute inset-y-0 right-0 hidden lg:block pointer-events-none"
+        style={{ width: "56%", zIndex: 2 }}
+      >
+        <img
+          src="/truck-hero.png"
+          alt="Green recycling truck on a clean city road — CivicMitra civic services"
+          className="w-full h-full object-cover object-center select-none"
+          draggable={false}
+        />
       </div>
     </section>
   );
 }
+
 
 // ── How Can We Help You Today? Section ───────────────────────────
 function ServicesCategorySection() {
@@ -686,7 +571,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-white text-slate-900 selection:bg-emerald-100">
       <Navbar />
-      <main className="mt-20">
+      <main>
         <HeroSection />
         <ServicesCategorySection />
         <ImpactStatsBanner />

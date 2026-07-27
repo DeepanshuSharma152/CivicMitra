@@ -99,9 +99,16 @@ public class HouseholdService {
             throw new IllegalStateException("DPDP consent must be recorded before household registration.");
         }
 
-        // ── Guard: user cannot have two households ────────────────────────────
-        if (householdRepository.findFirstByClaimedByUser_Id(user.getId()).isPresent()) {
-            throw new IllegalStateException("You have already registered a household.");
+        // ── Check if household already registered (for updates) ───────────────
+        Optional<Household> existingOpt = householdRepository.findFirstByClaimedByUser_Id(user.getId());
+        boolean isUpdate = existingOpt.isPresent();
+        Household h;
+        if (isUpdate) {
+            h = existingOpt.get();
+        } else {
+            h = new Household();
+            h.setClaimedByUser(user);
+            h.setPrimaryResident(user);
         }
 
         // ── Guardrail 2: Duplicate detection ─────────────────────────────────
@@ -109,13 +116,20 @@ public class HouseholdService {
         List<Household> duplicates = householdRepository.findDuplicateCandidates(
                 req.getWardId(), normalized, req.getLat(), req.getLng(), 50.0);
 
+        if (isUpdate) {
+            final Long existingId = h.getHouseholdId();
+            duplicates = duplicates.stream()
+                    .filter(d -> !d.getHouseholdId().equals(existingId))
+                    .toList();
+        }
+
         if (!duplicates.isEmpty()) {
-            List<Map<String, Object>> matches = duplicates.stream().map(h -> {
+            List<Map<String, Object>> matches = duplicates.stream().map(dm -> {
                 Map<String, Object> m = new LinkedHashMap<>();
-                m.put("householdId", h.getHouseholdId());
-                m.put("householdCode", h.getHouseholdCode());
-                m.put("houseNumber", h.getHouseNumber());
-                m.put("verificationStatus", h.getVerificationStatus());
+                m.put("householdId", dm.getHouseholdId());
+                m.put("householdCode", dm.getHouseholdCode());
+                m.put("houseNumber", dm.getHouseNumber());
+                m.put("verificationStatus", dm.getVerificationStatus());
                 return m;
             }).toList();
             return Map.of(
@@ -129,35 +143,45 @@ public class HouseholdService {
         Ward ward = wardRepository.findById(req.getWardId())
                 .orElseThrow(() -> new RuntimeException("Ward not found: " + req.getWardId()));
 
-        // ── Guardrail 3: Create PROVISIONAL household ─────────────────────────
-        String code = generateHouseholdCode(ward);
-
-        Household h = new Household();
-        h.setHouseholdCode(code);
+        // ── Guardrail 3: Create or update PROVISIONAL household ───────────────
+        if (!isUpdate) {
+            String code = generateHouseholdCode(ward);
+            h.setHouseholdCode(code);
+        }
         h.setWard(ward);
         h.setHouseNumber(normalized);
         h.setBlockCode(req.getBlockCode());
         h.setRegisteredMobile(req.getMobile());
         h.setLat(req.getLat());          // auto-captured GPS, never typed
         h.setLng(req.getLng());
-        h.setClaimedByUser(user);
-        h.setPrimaryResident(user);
         h.setVerificationStatus(Household.VerificationStatus.PROVISIONAL);
         h.setHasApp(true);
         householdRepository.save(h);
 
         // ── Queue entry — 14-day SLA ──────────────────────────────────────────
-        VerificationQueue queue = new VerificationQueue();
-        queue.setHouseholdId(h.getHouseholdId());
-        queue.setStatus(VerificationQueue.Status.PENDING);
-        queue.setDueDate(LocalDateTime.now().plusDays(14));
-        queueRepository.save(queue);
+        if (!isUpdate) {
+            VerificationQueue queue = new VerificationQueue();
+            queue.setHouseholdId(h.getHouseholdId());
+            queue.setStatus(VerificationQueue.Status.PENDING);
+            queue.setDueDate(LocalDateTime.now().plusDays(14));
+            queueRepository.save(queue);
+        } else {
+            boolean hasOpenEntry = queueRepository.existsByHouseholdIdAndStatusIn(
+                    h.getHouseholdId(), List.of(VerificationQueue.Status.PENDING, VerificationQueue.Status.IN_PROGRESS));
+            if (!hasOpenEntry) {
+                VerificationQueue queue = new VerificationQueue();
+                queue.setHouseholdId(h.getHouseholdId());
+                queue.setStatus(VerificationQueue.Status.PENDING);
+                queue.setDueDate(LocalDateTime.now().plusDays(14));
+                queueRepository.save(queue);
+            }
+        }
 
         return Map.of(
             "status", "PROVISIONAL",
-            "householdCode", code,
+            "householdCode", h.getHouseholdCode(),
             "householdId", h.getHouseholdId(),
-            "message", "Household registered. A ward officer will verify within 14 days.",
+            "message", isUpdate ? "Household updated successfully. A ward officer will verify within 14 days." : "Household registered. A ward officer will verify within 14 days.",
             "verificationStatus", "PROVISIONAL"
         );
     }

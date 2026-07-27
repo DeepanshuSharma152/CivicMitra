@@ -111,6 +111,11 @@ public class HouseholdController {
         resp.put("verificationStatus", h.getVerificationStatus());
         resp.put("gpsLocked", h.isGpsLocked());
         resp.put("ward", h.getWard() != null ? h.getWard().getSectorName() : null);
+        resp.put("wardId", h.getWard() != null ? h.getWard().getWardId() : null);
+        resp.put("mobile", h.getRegisteredMobile());
+        resp.put("blockCode", h.getBlockCode());
+        resp.put("lat", h.getLat());
+        resp.put("lng", h.getLng());
         return ResponseEntity.ok(resp);
     }
 

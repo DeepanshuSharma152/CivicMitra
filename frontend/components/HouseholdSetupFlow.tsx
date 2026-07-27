@@ -58,7 +58,7 @@ export function HouseholdSetupFlow({ municipalityId = 1, initialMobile, onComple
   const [duplicates, setDuplicates] = useState<HouseholdMatch[]>([]);
   const [result, setResult] = useState<HouseholdRegistrationResult | null>(null);
 
-  // Load wards & DPDP status on mount
+  // Load wards, DPDP status, and existing household on mount
   useEffect(() => {
     api.getWards(municipalityId)
       .then(setWards)
@@ -69,6 +69,17 @@ export function HouseholdSetupFlow({ municipalityId = 1, initialMobile, onComple
         if (status?.consentGiven) {
           setDpdpGiven(true);
           setDpdpChecked(true);
+        }
+      })
+      .catch(() => {});
+
+    api.getMyHousehold()
+      .then((household) => {
+        if (household?.hasHousehold) {
+          if (household.houseNumber) setHouseNumber(household.houseNumber);
+          if (household.wardId) setWardId(household.wardId);
+          if (household.blockCode) setBlockCode(household.blockCode || "");
+          if (household.mobile) setMobile(household.mobile);
         }
       })
       .catch(() => {});

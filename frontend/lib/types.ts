@@ -7,7 +7,7 @@ export interface SessionUser { token: string; email: string; name: string; role:
 export interface Profile { name: string; email: string; role: UserRole; municipality?: string | null; ward?: string | null; wardId?: number | null; householdId?: number | null; houseNumber?: string | null; phoneNumber?: string | null; }
 export interface BinResult { binType: BinColor; passed: boolean; aiConfidence: number; contaminationDetail?: string | null; }
 export interface Submission { submissionId: number; status: SubmissionStatus; overallScore: number; failureReason?: string | null; attemptNumber: number; qrToken?: string | null; qrCodeBase64?: string | null; qrExpiresAt?: string | null; submittedAt: string; binResults: BinResult[]; }
-export interface Complaint { id: number; title: string; description: string; status: string; wardId?: number; location?: string; imagePath?: string; createdAt?: string; upvotes: number; }
+export interface Complaint { id: number; title: string; description: string; status: string; wardId?: number; location?: string; imagePath?: string; createdAt?: string; upvotes: number; category?: string; }
 export interface WorkerScanDetails {
   scanResult: string;
   message: string;
@@ -51,6 +51,11 @@ export interface MyHousehold {
   verificationStatus?: VerificationStatus;
   gpsLocked?: boolean;
   ward?: string;
+  wardId?: number;
+  mobile?: string;
+  blockCode?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface DPDPStatus {

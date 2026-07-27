@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
-import { clearSession } from "@/lib/session";
+import { useAuth } from "../app/context/AuthContext";
 import type { Profile } from "@/lib/types";
 
 interface CitizenHeaderProps {
@@ -21,12 +21,13 @@ interface CitizenHeaderProps {
 }
 
 export function CitizenHeader({ activeTab = "dashboard", profile, onOpenHouseholdSetup }: CitizenHeaderProps) {
+  const { session, logout } = useAuth();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
-  const fullName = profile?.name || "Angad Singh";
+  const fullName = profile?.name || session?.name || "";
   const names = fullName.trim().split(" ");
-  const initials = names.length > 1 ? `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase() : names[0][0]?.toUpperCase() || "A";
+  const initials = names.length > 1 ? `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase() : names[0][0]?.toUpperCase() || "U";
 
   const navLinks = [
     { label: "Dashboard", href: "/dashboard", key: "dashboard" },
@@ -42,7 +43,7 @@ export function CitizenHeader({ activeTab = "dashboard", profile, onOpenHousehol
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200/80 shadow-2xs">
       <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Left Brand Logo */}
-        <Logo href="/dashboard" />
+        <Logo href="/" />
 
         {/* Center Desktop Navigation Links (Clean Text Links without icons matching screenshot) */}
         <nav className="hidden xl:flex items-center gap-6 lg:gap-8 h-full">
@@ -100,7 +101,7 @@ export function CitizenHeader({ activeTab = "dashboard", profile, onOpenHousehol
               <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95">
                 <div className="px-4 py-2 border-b border-slate-100">
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Signed in as</p>
-                  <p className="text-xs font-bold text-slate-900 truncate">{profile?.email || "citizen@civicmitra.gov.in"}</p>
+                  <p className="text-xs font-bold text-slate-900 truncate">{profile?.email || session?.email || ""}</p>
                 </div>
                 {onOpenHouseholdSetup && (
                   <button
@@ -115,8 +116,7 @@ export function CitizenHeader({ activeTab = "dashboard", profile, onOpenHousehol
                 )}
                 <button
                   onClick={() => {
-                    clearSession();
-                    window.location.assign("/");
+                    logout();
                   }}
                   className="w-full text-left px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2"
                 >

@@ -24,11 +24,13 @@ import {
   Sparkles,
   Trash2,
   TriangleAlert,
+  X,
 } from "lucide-react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { CitizenHeader } from "@/components/CitizenHeader";
+import { HouseholdSetupFlow } from "@/components/HouseholdSetupFlow";
 import { api } from "@/lib/api";
 import { readSession } from "@/lib/session";
 import type { BinColor, Profile } from "@/lib/types";
@@ -328,6 +330,15 @@ export default function SubmitWastePage() {
   const [submitting, setSubmitting] = useState(false);
   const [pendingBody, setPendingBody] = useState<FormData | null>(null);
   const [error, setError] = useState("");
+  const [showHouseholdSetup, setShowHouseholdSetup] = useState(false);
+
+  function handleHouseholdComplete(code: string) {
+    setShowHouseholdSetup(false);
+    void api
+      .profile()
+      .then(setProfile)
+      .catch((err) => setError(err instanceof Error ? err.message : "Unable to reload household."));
+  }
 
   const requiredComplete = binsConfig.filter((bin) => bin.required).every((bin) => photos[bin.type].length > 0);
 
@@ -453,7 +464,31 @@ export default function SubmitWastePage() {
       </AnimatePresence>
 
       {/* Top Professional Header Bar */}
-      <CitizenHeader activeTab="submit" profile={profile} />
+      <CitizenHeader activeTab="submit" profile={profile} onOpenHouseholdSetup={() => setShowHouseholdSetup(true)} />
+
+      {/* Household Setup Modal Overlay */}
+      {showHouseholdSetup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
+          <div className="relative flex h-full max-h-[85vh] w-full max-w-xl flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Register Household</h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">Please provide your home coordinates & details.</p>
+              </div>
+              <button
+                onClick={() => setShowHouseholdSetup(false)}
+                className="rounded-full p-2 text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 transition-colors"
+                aria-label="Close modal"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              <HouseholdSetupFlow municipalityId={1} initialMobile={profile?.phoneNumber || undefined} onComplete={handleHouseholdComplete} />
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Sub-header / Title Row with City & Truck Graphic */}
@@ -494,20 +529,23 @@ export default function SubmitWastePage() {
           </div>
 
           {/* Right Household Card */}
-          <div className="w-full sm:w-auto flex items-center justify-between gap-3 border border-slate-200/80 bg-white rounded-2xl p-3 px-4 shadow-2xs">
+          <button
+            onClick={() => setShowHouseholdSetup(true)}
+            className="w-full sm:w-auto flex items-center justify-between gap-3 border border-slate-200/80 bg-white rounded-2xl p-3 px-4 shadow-2xs text-left cursor-pointer hover:border-emerald-300 hover:bg-slate-50 transition-all"
+          >
             <div className="size-9 sm:size-10 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0">
               <House className="size-4 sm:size-5" />
             </div>
             <div className="flex flex-col text-left">
               <span className="text-xs font-bold text-slate-900">
-                Household ID: {profile?.houseNumber || "22"}
+                {profile?.householdId ? `Household ID: ${profile.householdId}` : "No Household"}
               </span>
               <span className="text-[11px] text-slate-500 font-medium">
-                {profile?.ward || "Ward 15, Green Park"}
+                {profile?.householdId ? (profile.ward || "No Ward") : "Setup required on dashboard"}
               </span>
             </div>
             <ChevronDown className="size-4 text-slate-400 ml-2" />
-          </div>
+          </button>
         </section>
 
         {/* ── Status Bar Row (4 Cards + Refresh - 100% Responsive Grid) ──── */}

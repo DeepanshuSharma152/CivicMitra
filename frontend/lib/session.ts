@@ -18,5 +18,10 @@ export function saveSession(session: SessionUser, persist: boolean) {
 }
 
 export function clearSession() {
-  [localStorage, sessionStorage].forEach(store => { store.removeItem(TOKEN_KEY); store.removeItem(USER_KEY); });
+  [localStorage, sessionStorage].forEach(store => {
+    store.removeItem(TOKEN_KEY);
+    store.removeItem(USER_KEY);
+    store.removeItem("civicmitra.session");
+  });
 }
+

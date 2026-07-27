@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 
-export function Logo({ href = "/dashboard", className = "" }: { href?: string; className?: string }) {
+export function Logo({ href = "/", className = "" }: { href?: string; className?: string }) {
   return (
     <Link href={href} className={`flex items-center gap-3 shrink-0 no-underline group ${className}`}>
       <div className="relative size-10 sm:size-11 shrink-0 overflow-hidden transition-transform group-hover:scale-105">
