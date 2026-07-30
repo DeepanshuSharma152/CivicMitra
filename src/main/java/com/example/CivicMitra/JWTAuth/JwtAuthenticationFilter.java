@@ -2,6 +2,7 @@ package com.example.CivicMitra.JWTAuth;
 
 
 import com.example.CivicMitra.Service.CustomUserDetailsService;
+import com.example.CivicMitra.Service.WorkerUserDetailsService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,15 +17,30 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
+/**
+ * JWT authentication filter — runs once per request.
+ *
+ * Routing logic:
+ *   - If JWT subject starts with "W-"  → worker token → WorkerUserDetailsService
+ *   - Otherwise                        → citizen token → CustomUserDetailsService
+ *
+ * Both paths produce a UsernamePasswordAuthenticationToken placed into the
+ * SecurityContext, so downstream controllers and @PreAuthorize annotations
+ * work identically regardless of whether the caller is a citizen or a worker.
+ */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final CustomUserDetailsService customUserDetailsService;
+    private final WorkerUserDetailsService workerUserDetailsService;
 
-    public JwtAuthenticationFilter(JwtService jwtService,CustomUserDetailsService customUserDetailsService){
-        this.jwtService=jwtService;
-        this.customUserDetailsService=customUserDetailsService;
+    public JwtAuthenticationFilter(JwtService jwtService,
+                                   CustomUserDetailsService customUserDetailsService,
+                                   WorkerUserDetailsService workerUserDetailsService) {
+        this.jwtService = jwtService;
+        this.customUserDetailsService = customUserDetailsService;
+        this.workerUserDetailsService = workerUserDetailsService;
     }
 
     @Override
@@ -32,51 +48,50 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     @NonNull HttpServletResponse response,
                                     @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
-       // 1. Extract the Authorization Header
-        final String authHeader = request.getHeader("Authorization");
-        final String jwt;
-        final String userEmail;
 
-        // 2. Check if the header is missing or doesn't start with "Bearer "
+        // 1. Extract Authorization header
+        final String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response); // Pass it down the chain (it will likely be rejected later)
+            filterChain.doFilter(request, response);
             return;
         }
 
-        // 3. Extract the token (Remove "Bearer " from the string)
-        jwt = authHeader.substring(7);
+        // 2. Extract raw token
+        final String jwt = authHeader.substring(7);
 
-        // 4. Extract the email from the token using our Token Factory
-        userEmail = jwtService.extractUsername(jwt);
+        // 3. Extract subject (email for citizens, workerCode for workers)
+        final String subject = jwtService.extractUsername(jwt);
 
-        // 5. If we have an email, and the user isn't already authenticated in this session
-        if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+        // 4. Only proceed if we have a subject and no existing auth in this session
+        if (subject != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-            // Fetch the user from the database
-            UserDetails userDetails = this.customUserDetailsService.loadUserByUsername(userEmail);
+            // 5. Route to the correct UserDetailsService based on subject prefix
+            final UserDetails userDetails;
+            if (subject.startsWith("W-")) {
+                // Worker token — load via WorkerUserDetailsService
+                userDetails = workerUserDetailsService.loadUserByUsername(subject);
+            } else {
+                // Citizen/Authority token — load via CustomUserDetailsService (email lookup)
+                userDetails = customUserDetailsService.loadUserByUsername(subject);
+            }
 
-            // 6. Validate the token
+            // 6. Validate token signature + expiry against the loaded principal
             if (jwtService.isTokenValid(jwt, userDetails)) {
 
-                // 7. Create the "Security Pass" for Spring
+                // 7. Build Spring Security authentication token
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                         userDetails,
                         null,
                         userDetails.getAuthorities()
                 );
-
-                // Attach details like IP address to the token
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-                // 8. Put the pass into the Security Context (The user is now officially logged in for this request)
+                // 8. Place into SecurityContext — request is now authenticated
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             }
         }
 
-        // 9. Move to the next filter or to the Controller!
+        // 9. Continue filter chain to the controller
         filterChain.doFilter(request, response);
     }
-
-    }
-
-
+}

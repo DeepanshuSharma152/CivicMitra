@@ -22,6 +22,24 @@ public class WorkerScanDetailsDTO {
     private LocalDateTime expiresAt;
     private List<BinResultDTO> binResults = new ArrayList<>();
 
+    // ── GPS Proximity fields (soft — informational only, never blocks pickup) ──
+    /**
+     * One of:
+     *   WITHIN_RANGE       — return visit, worker within 100m of locked GPS
+     *   OUT_OF_RANGE       — return visit, worker >100m (flagged for review)
+     *   FIRST_VISIT_MATCHED   — first visit, worker GPS matches citizen registration GPS (≤50m) → locked
+     *   FIRST_VISIT_MISMATCH  — first visit, worker GPS differs from citizen GPS (>50m) → not locked, flagged
+     *   FIRST_VISIT_NO_REG    — first visit, no citizen GPS → worker GPS saved as lock
+     *   NO_GPS             — worker phone provided no coordinates
+     */
+    private String gpsStatus;
+
+    /** Straight-line distance in metres between worker and household GPS. Null if GPS unavailable. */
+    private Double distanceMetres;
+
+    /** Whether the household's GPS lock has been set (by any previous worker visit). */
+    private boolean gpsLocked;
+
     public boolean isValid() {
         return "VALID".equals(scanResult);
     }

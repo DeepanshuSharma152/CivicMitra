@@ -26,9 +26,30 @@ public class JwtService {
 
 public String generateToken(UserDetails userDetails){
     Map<String, Object> extraClaims = new HashMap<>();
-    // Extract the role from UserDetails and put it in the map
     extraClaims.put("role", userDetails.getAuthorities().iterator().next().getAuthority());
-    return createToken(new HashMap<>(),userDetails.getUsername());
+    // Pass extraClaims through (was previously discarded — now fixed)
+    return createToken(extraClaims, userDetails.getUsername());
+}
+
+/**
+ * Generates a JWT for a Worker entity.
+ *
+ * Claims embedded:
+ *   sub          = workerCode (e.g. "W-CHA-001")
+ *   role         = "WORKER_ENTITY"
+ *   workerId     = Worker.id (Long)
+ *   municipalityId = Worker.municipality.municipalityId (Long)
+ *
+ * The "W-" prefix on the subject is the signal JwtAuthenticationFilter uses
+ * to route token validation to WorkerUserDetailsService instead of
+ * CustomUserDetailsService.
+ */
+public String generateWorkerToken(String workerCode, Long workerId, Long municipalityId) {
+    Map<String, Object> claims = new HashMap<>();
+    claims.put("role", "WORKER_ENTITY");
+    claims.put("workerId", workerId);
+    claims.put("municipalityId", municipalityId);
+    return createToken(claims, workerCode);
 }
 
 public String createToken(Map<String,Object> claims,String subject){

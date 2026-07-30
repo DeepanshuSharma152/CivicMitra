@@ -12,4 +12,5 @@ public class BinResultDTO {
     private boolean passed;
     private double aiConfidence;
     private String contaminationDetail;
+    private String imagePath;
 }

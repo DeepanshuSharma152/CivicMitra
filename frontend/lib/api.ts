@@ -29,6 +29,7 @@ async function request<T>(path: string, init: RequestInit = {}, authenticated = 
 export const api = {
   // ── Auth ──────────────────────────────────────────────────────────────────
   login: (email: string, password: string) => request<{ token: string; email: string; name: string; role: UserRole; userId: number }>("/api/v1/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }, false),
+  workerLogin: (workerCode: string, pin: string) => request<{ token: string; workerCode: string; name: string; role: string; workerId: number; municipalityId?: number; wardId?: number; routeId?: number }>("/api/v1/worker/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workerCode, pin }) }, false),
   sendLoginOtp: (email: string) => request<OtpSendResult>(`/api/v1/auth/login-otp/send?email=${encodeURIComponent(email)}`, { method: "POST" }, false),
   verifyLoginOtp: (email: string, pass: string, otp: string) => request<{ token: string; email: string; name: string; role: UserRole; userId: number }>("/api/v1/auth/login-otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: pass, otp }) }, false),
   register: (body: Record<string, unknown>) => request("/api/v1/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, false),
@@ -66,7 +67,12 @@ export const api = {
   // ── Worker QR ────────────────────────────────────────────────────────────
   verifyQr: (tokenId: string, workerId: number, workerLat: number, workerLng: number) => request<WorkerScanDetails | any>(`/api/v1/segregation/verify-qr?tokenId=${encodeURIComponent(tokenId)}&workerId=${workerId}&workerLat=${workerLat}&workerLng=${workerLng}`, { method: "POST" }),
   scanQr: (tokenId: string, workerLat: number, workerLng: number) => request<WorkerScanDetails>(`/api/v1/segregation/scan-qr?tokenId=${encodeURIComponent(tokenId)}&workerLat=${workerLat}&workerLng=${workerLng}`, { method: "POST" }),
-  confirmPickup: (tokenId: string, workerId: number, workerLat: number, workerLng: number) => request<WorkerPickupAction>(`/api/v1/segregation/confirm-pickup?tokenId=${encodeURIComponent(tokenId)}&workerId=${workerId}&workerLat=${workerLat}&workerLng=${workerLng}`, { method: "POST" }),
+  confirmPickup: (tokenId: string, workerId: number, workerLat: number, workerLng: number, gpsStatus?: string, distanceMetres?: number) => {
+    let url = `/api/v1/segregation/confirm-pickup?tokenId=${encodeURIComponent(tokenId)}&workerId=${workerId}&workerLat=${workerLat}&workerLng=${workerLng}`;
+    if (gpsStatus) url += `&gpsStatus=${encodeURIComponent(gpsStatus)}`;
+    if (distanceMetres !== undefined) url += `&distanceMetres=${distanceMetres}`;
+    return request<WorkerPickupAction>(url, { method: "POST" });
+  },
   rejectPickup: (body: FormData) => request<WorkerPickupAction>("/api/v1/segregation/reject-pickup", { method: "POST", body })
 };
 

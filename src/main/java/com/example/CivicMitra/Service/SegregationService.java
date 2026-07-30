@@ -10,14 +10,18 @@ import com.example.CivicMitra.DTO.WorkerPickupActionDTO;
 import com.example.CivicMitra.DTO.WorkerScanDetailsDTO;
 import com.example.CivicMitra.Enums.BinType;
 import com.example.CivicMitra.Enums.SubmissionStatus;
+import com.example.CivicMitra.Repository.CollectionLogRepository;
 import com.example.CivicMitra.Repository.ComplianceStreakRepository;
 import com.example.CivicMitra.Repository.GreenQRTokenRepository;
 import com.example.CivicMitra.Repository.HouseholdRepository;
 import com.example.CivicMitra.Repository.SegregationRepository;
 import com.example.CivicMitra.Repository.UserRepository;
 import com.example.CivicMitra.Service.TrustService;
+import com.example.CivicMitra.Service.SegregationProcessingService;
 
+import com.example.CivicMitra.Enums.WorkerDecision;
 import com.example.CivicMitra.model.segregation.*;
+import com.example.CivicMitra.model.worker.CollectionLog;
 import com.google.zxing.BarcodeFormat;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.common.BitMatrix;
@@ -37,6 +41,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -51,6 +56,8 @@ public class SegregationService {
     private final TrustService trustService;
     private final ComplianceStreakRepository streakRepository;
     private final UserRepository userRepository;
+    private final SegregationProcessingService processingService;
+    private final CollectionLogRepository collectionLogRepository;
 
     public SegregationService(SegregationRepository segregationRepository,
                               HouseholdRepository householdRepository,
@@ -59,7 +66,9 @@ public class SegregationService {
                               SegregationScoringEngine scoringEngine,
                               TrustService trustService,
                               ComplianceStreakRepository streakRepository,
-                              UserRepository userRepository) {
+                              UserRepository userRepository,
+                              SegregationProcessingService processingService,
+                              CollectionLogRepository collectionLogRepository) {
         this.segregationRepository = segregationRepository;
         this.householdRepository = householdRepository;
         this.qrTokenRepository = qrTokenRepository;
@@ -68,6 +77,74 @@ public class SegregationService {
         this.trustService = trustService;
         this.streakRepository = streakRepository;
         this.userRepository = userRepository;
+        this.processingService = processingService;
+        this.collectionLogRepository = collectionLogRepository;
+    }
+
+    // ─────────────────────────────────────────────────────
+    // CITIZEN: Async batch submission (all bins at once)
+    // ─────────────────────────────────────────────────────
+
+    /**
+     * Creates a PROCESSING submission immediately, reads image bytes eagerly,
+     * fires async AI via {@link SegregationProcessingService}, and returns a
+     * response map the controller can wrap in a 202 ACCEPTED.
+     *
+     * @throws IllegalArgumentException if household not found or bin lists mismatch
+     * @throws IllegalStateException    if daily attempt limit is reached
+     */
+    @Transactional
+    public Map<String, Object> submitSegregationAsync(
+            List<MultipartFile> binImages,
+            List<String> binTypes,
+            Long householdId,
+            double lat,
+            double lng) throws Exception {
+
+        Household household = householdRepository.findById(householdId)
+                .orElseThrow(() -> new IllegalArgumentException("Household not found: " + householdId));
+
+        LocalDate today = LocalDate.now();
+        long attemptsToday = segregationRepository.countByHouseholdAndSubmittedAtBetween(
+                household,
+                today.atStartOfDay(),
+                today.atTime(23, 59, 59));
+
+        if (attemptsToday >= 5) {
+            throw new IllegalStateException("Maximum 5 attempts per day reached.");
+        }
+
+        if (binImages.size() != binTypes.size()) {
+            throw new IllegalArgumentException(
+                    "Number of images (" + binImages.size() +
+                    ") does not match number of bin types (" + binTypes.size() + ").");
+        }
+
+        SegregationSubmission submission = new SegregationSubmission();
+        submission.setHousehold(household);
+        submission.setLat(lat);
+        submission.setLng(lng);
+        submission.setAttemptNumber((int) attemptsToday + 1);
+        submission.setStatus(SubmissionStatus.PROCESSING);
+        submission = segregationRepository.save(submission);
+
+        final Long submissionId = submission.getId();
+
+        // Read bytes eagerly — MultipartFile is request-scoped
+        List<WasteAiService.ImagePayload> images = new ArrayList<>();
+        for (int i = 0; i < binImages.size(); i++) {
+            images.add(new WasteAiService.ImagePayload(
+                    binImages.get(i).getBytes(), binTypes.get(i)));
+        }
+
+        processingService.processSubmission(
+                submissionId, householdId, (int) attemptsToday + 1, images);
+
+        return Map.of(
+                "submissionId", submissionId,
+                "status",       "PROCESSING",
+                "message",      "Waste analysis started. Poll /api/v1/segregation/status/" + submissionId
+        );
     }
 
     // ─────────────────────────────────────────────────────────
@@ -242,14 +319,22 @@ public class SegregationService {
                 action.getStatus(), action.getHouseNumber(), "PICKUP_COMPLETED".equals(action.getStatus()), action.getMessage());
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * Preview scan — returns full household details for worker to inspect.
+     * Also runs the GPS proximity check (soft: informational only, never blocks pickup).
+     * May write to Household (GPS lock) so annotated @Transactional (not readOnly).
+     */
+    @Transactional
     public WorkerScanDetailsDTO scanQR(String tokenId, Double workerLat, Double workerLng) {
         GreenQRToken token = qrTokenRepository.findById(tokenId)
                 .orElseThrow(() -> new RuntimeException("QR token not found"));
+
         WorkerScanDetailsDTO dto = new WorkerScanDetailsDTO();
         dto.setTokenId(token.getToken());
-        dto.setHouseNumber(token.getHousehold().getHouseNumber());
+        Household household = token.getHousehold();
+        dto.setHouseNumber(household.getHouseNumber());
 
+        // Validate token state (consumed / expired only — GPS never blocks)
         String validation = validationFailure(token, workerLat, workerLng);
         if (validation != null) {
             dto.setScanResult(validation);
@@ -261,10 +346,10 @@ public class SegregationService {
         dto.setScanResult("VALID");
         dto.setMessage("QR is valid and ready for doorstep verification.");
         dto.setSubmissionId(submission.getId());
-        dto.setResidentName(token.getHousehold().getPrimaryResident() == null
-                ? "Resident" : token.getHousehold().getPrimaryResident().getFullName());
-        dto.setWard(token.getHousehold().getWard() == null ? "Assigned ward"
-                : "Ward " + token.getHousehold().getWard().getWardNumber());
+        dto.setResidentName(household.getPrimaryResident() == null
+                ? "Resident" : household.getPrimaryResident().getFullName());
+        dto.setWard(household.getWard() == null ? "Assigned ward"
+                : "Ward " + household.getWard().getWardNumber());
         dto.setOverallScore(submission.getOverallScore());
         dto.setSubmittedAt(submission.getSubmittedAt());
         dto.setExpiresAt(token.getExpiresAt());
@@ -274,25 +359,70 @@ public class SegregationService {
             result.setPassed(bin.isPassed());
             result.setAiConfidence(bin.getAiConfidence());
             result.setContaminationDetail(bin.getContaminationDetail());
+            result.setImagePath(bin.getImagePath());
             return result;
         }).collect(Collectors.toList()));
+
+        // ── GPS Proximity Check (soft — informational only) ──────────────────
+        if (workerLat != null && workerLng != null && workerLat != 0.0 && workerLng != 0.0) {
+            applyGpsProximity(dto, household, workerLat, workerLng);
+        } else {
+            dto.setGpsStatus("NO_GPS");
+            dto.setGpsLocked(household.isGpsLocked());
+        }
+
         return dto;
     }
 
+    /**
+     * Confirms pickup, writes an audit {@link CollectionLog} row, and advances
+     * the compliance streak.
+     *
+     * @param gpsStatus      the proximity decision from the preceding scanQR step
+     *                       (WITHIN_RANGE / OUT_OF_RANGE / FIRST_VISIT_* / NO_GPS).
+     *                       Persisted in CollectionLog for authority dashboard queries.
+     * @param distanceMetres straight-line distance in metres at scan time; null if GPS was absent.
+     */
     @Transactional
-    public WorkerPickupActionDTO confirmPickup(String tokenId, Long workerId, Double workerLat, Double workerLng) {
+    public WorkerPickupActionDTO confirmPickup(
+            String tokenId, Long workerId,
+            Double workerLat, Double workerLng,
+            String gpsStatus, Double distanceMetres) {
+
         GreenQRToken token = qrTokenRepository.findById(tokenId)
                 .orElseThrow(() -> new RuntimeException("QR token not found"));
         String validation = validationFailure(token, workerLat, workerLng);
         if (validation != null) return action(validation, validationMessage(validation, token, workerLat, workerLng), token);
 
+        // ── Mark QR token consumed ──────────────────────────────────────
         token.setConsumed(true);
         token.setConsumedAt(LocalDateTime.now());
         token.setConsumedByWorker(userRepository.findById(workerId)
                 .orElseThrow(() -> new RuntimeException("Worker account not found")));
-        token.setWorkerScanLat(workerLat);
-        token.setWorkerScanLng(workerLng);
+        token.setWorkerScanLat(workerLat != null ? workerLat : 0.0);
+        token.setWorkerScanLng(workerLng != null ? workerLng : 0.0);
         qrTokenRepository.save(token);
+
+        // ── Write full audit CollectionLog row ───────────────────────
+        CollectionLog log = new CollectionLog();
+        log.setHousehold(token.getHousehold());
+        log.setMunicipality(token.getHousehold().getWard() != null
+                ? token.getHousehold().getWard().getMunicipality() : null);
+        log.setWorkerGpsLat(workerLat != null ? workerLat : 0.0);
+        log.setWorkerGpsLng(workerLng != null ? workerLng : 0.0);
+        log.setGpsStatus(gpsStatus);
+        log.setDistanceMetres(distanceMetres);
+        log.setQrToken(tokenId);
+        log.setWorkerDecision(WorkerDecision.ACCEPTED);
+        log.setCollectedAt(LocalDateTime.now());
+        if (token.getSubmission() != null && token.getSubmission().getOverallScore() > 0) {
+            log.setAiScoreSnapshot(java.math.BigDecimal.valueOf(token.getSubmission().getOverallScore()));
+        }
+        collectionLogRepository.save(log);
+
+        // ── Advance compliance streak ───────────────────────────────
+        updateStreak(token.getHousehold());
+
         return action("PICKUP_COMPLETED", "Pickup recorded and the household has been marked compliant.", token);
     }
 
@@ -336,24 +466,75 @@ public class SegregationService {
         return action("PICKUP_REJECTED", "Submission rejected with evidence and sent for authority review.", token);
     }
 
+    /**
+     * GPS Proximity Check (soft — informational, never blocks pickup).
+     *
+     * Decision matrix:
+     *  1. gpsLocked == true  → compare workerGPS vs gpsLockLat/Lng (worker-verified reference)
+     *       ≤ 100m → WITHIN_RANGE
+     *       > 100m → OUT_OF_RANGE (flagged, but pickup proceeds)
+     *
+     *  2. gpsLocked == false + household.lat/lng present (citizen registered GPS)
+     *       ≤ 50m  → FIRST_VISIT_MATCHED  → lock GPS now (worker confirms citizen location)
+     *       > 50m  → FIRST_VISIT_MISMATCH → do NOT lock, flag for admin review
+     *
+     *  3. gpsLocked == false + no registration GPS at all
+     *       → FIRST_VISIT_NO_REG → worker GPS becomes the GPS lock
+     */
+    private void applyGpsProximity(WorkerScanDetailsDTO dto, Household household,
+                                    double workerLat, double workerLng) {
+        if (household.isGpsLocked()) {
+            // ── Return visit: compare against locked GPS ─────────────────────
+            double distM = trustService.haversine(
+                    workerLat, workerLng,
+                    household.getGpsLockLat(), household.getGpsLockLng()) * 1000;
+            dto.setDistanceMetres(distM);
+            dto.setGpsLocked(true);
+            dto.setGpsStatus(distM <= 100 ? "WITHIN_RANGE" : "OUT_OF_RANGE");
+
+        } else if (household.getLat() != null && household.getLng() != null) {
+            // ── First visit: citizen had set GPS at registration ──────────────
+            double distM = trustService.haversine(
+                    workerLat, workerLng,
+                    household.getLat(), household.getLng()) * 1000;
+            dto.setDistanceMetres(distM);
+            if (distM <= 50) {
+                // Match — lock GPS using worker's coordinates
+                household.setGpsLockLat(workerLat);
+                household.setGpsLockLng(workerLng);
+                household.setGpsLocked(true);
+                householdRepository.save(household);
+                dto.setGpsStatus("FIRST_VISIT_MATCHED");
+            } else {
+                // Mismatch — do not lock, flag for admin
+                dto.setGpsStatus("FIRST_VISIT_MISMATCH");
+            }
+            dto.setGpsLocked(household.isGpsLocked());
+
+        } else {
+            // ── First visit: no registration GPS → worker becomes the reference ─
+            household.setGpsLockLat(workerLat);
+            household.setGpsLockLng(workerLng);
+            household.setGpsLocked(true);
+            householdRepository.save(household);
+            dto.setGpsStatus("FIRST_VISIT_NO_REG");
+            dto.setGpsLocked(true);
+        }
+    }
+
     private String validationFailure(GreenQRToken token, Double workerLat, Double workerLng) {
         if (token.isConsumed()) return token.isRejected() ? "ALREADY_REJECTED" : "ALREADY_USED";
         if (LocalDateTime.now().isAfter(token.getExpiresAt())) return "EXPIRED";
-        Household household = token.getHousehold();
-        if (workerLat != null && workerLng != null && household.getLat() != null && household.getLng() != null) {
-            double distance = trustService.haversine(workerLat, workerLng, household.getLat(), household.getLng());
-            if (distance > 0.05) return "GPS_MISMATCH";
-        }
+        // GPS is now soft (informational only) — proximity never blocks pickup.
         return null;
     }
 
     private String validationMessage(String status, GreenQRToken token, Double workerLat, Double workerLng) {
         return switch (status) {
             case "ALREADY_REJECTED" -> "This submission has already been rejected and sent for review.";
-            case "ALREADY_USED" -> "This QR has already been used for collection.";
-            case "EXPIRED" -> "This QR expired at " + token.getExpiresAt() + ".";
-            case "GPS_MISMATCH" -> "You need to be within 50 metres of the household to validate this pickup.";
-            default -> "This QR cannot be verified right now.";
+            case "ALREADY_USED"     -> "This QR has already been used for collection.";
+            case "EXPIRED"          -> "This QR expired at " + token.getExpiresAt() + ".";
+            default                 -> "This QR cannot be verified right now.";
         };
     }
 

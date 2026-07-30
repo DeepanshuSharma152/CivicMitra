@@ -5,130 +5,129 @@ import com.example.CivicMitra.DTO.SegregationResponseDTO;
 import com.example.CivicMitra.DTO.WorkerPickupActionDTO;
 import com.example.CivicMitra.DTO.WorkerScanDetailsDTO;
 import com.example.CivicMitra.Enums.SubmissionStatus;
-import com.example.CivicMitra.Repository.HouseholdRepository;
-import com.example.CivicMitra.Repository.SegregationRepository;
-import com.example.CivicMitra.Service.SegregationProcessingService;
+import com.example.CivicMitra.Service.SegregationDraftService;
 import com.example.CivicMitra.Service.SegregationService;
-import com.example.CivicMitra.Ai.service.WasteAiService;
 import com.example.CivicMitra.model.segregation.SegregationSubmission;
+import com.example.CivicMitra.Repository.SegregationRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 /**
  * REST controller for the segregation flow.
  *
- * NEW async submit flow:
- *  POST /api/v1/segregation/submit       → returns 202 immediately with submissionId
- *  GET  /api/v1/segregation/status/{id}  → citizen polls until status != PROCESSING
+ * This controller is intentionally thin — it handles HTTP concerns only
+ * (parameter binding, status codes, exception → HTTP status mapping).
+ * All business logic lives in {@link SegregationService} and
+ * {@link SegregationDraftService}.
  *
- * Existing synchronous endpoints (QR verify, worker scan/pickup) are unchanged.
+ * Draft (per-bin) flow:
+ *  POST /draft/start           → create DRAFT, returns draftId
+ *  POST /draft/{id}/add-bin    → add one bin image
+ *  POST /draft/{id}/finalize   → trigger async AI, returns 202
+ *
+ * Legacy batch flow (backward-compatible):
+ *  POST /submit                → all bins at once, returns 202
+ *
+ * Polling:
+ *  GET  /status/{id}           → citizen polls until status != PROCESSING
  */
 @RestController
 @RequestMapping("/api/v1/segregation")
 public class SegregationController {
 
     private final SegregationService segregationService;
-    private final SegregationProcessingService processingService;
+    private final SegregationDraftService draftService;
     private final SegregationRepository submissionRepository;
-    private final HouseholdRepository householdRepository;
 
     public SegregationController(SegregationService segregationService,
-                                 SegregationProcessingService processingService,
-                                 SegregationRepository submissionRepository,
-                                 HouseholdRepository householdRepository) {
-        this.segregationService = segregationService;
-        this.processingService = processingService;
+                                 SegregationDraftService draftService,
+                                 SegregationRepository submissionRepository) {
+        this.segregationService   = segregationService;
+        this.draftService         = draftService;
         this.submissionRepository = submissionRepository;
-        this.householdRepository = householdRepository;
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // CITIZEN: Async submission — returns 202 immediately
+    // CITIZEN: Per-bin draft flow
+    // ─────────────────────────────────────────────────────────────────────
+
+    /** Step 1 — Creates an empty DRAFT submission. */
+    @PostMapping("/draft/start")
+    public ResponseEntity<?> startDraft(
+            @RequestParam("householdId") Long householdId,
+            @RequestParam("lat")         double lat,
+            @RequestParam("lng")         double lng
+    ) {
+        try {
+            return ResponseEntity.ok(draftService.startDraft(householdId, lat, lng));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", "Error starting draft: " + e.getMessage()));
+        }
+    }
+
+    /** Step 2 — Adds one bin image to an open DRAFT. */
+    @PostMapping(value = "/draft/{draftId}/add-bin", consumes = "multipart/form-data")
+    public ResponseEntity<?> addBinToDraft(
+            @PathVariable            Long          draftId,
+            @RequestParam("binType") String        binType,
+            @RequestParam("binImage") MultipartFile binImage
+    ) {
+        try {
+            return ResponseEntity.ok(draftService.addBin(draftId, binType, binImage));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", "Error adding bin: " + e.getMessage()));
+        }
+    }
+
+    /** Step 3 — Finalizes the draft and kicks off async AI analysis. */
+    @PostMapping("/draft/{draftId}/finalize")
+    public ResponseEntity<?> finalizeDraft(@PathVariable Long draftId) {
+        try {
+            return ResponseEntity.accepted().body(draftService.finalizeDraft(draftId));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", "Error finalizing draft: " + e.getMessage()));
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // CITIZEN: Legacy batch submission (backward-compatible)
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Accepts 4 bin images, persists a PROCESSING submission, fires async AI,
-     * and returns 202 ACCEPTED with the submissionId so the frontend can poll.
+     * Accepts all bin images in a single request.
+     * Kept for backward compatibility; new clients should prefer the /draft flow.
      */
     @PostMapping(value = "/submit", consumes = "multipart/form-data")
     public ResponseEntity<?> submitSegregation(
-            @RequestParam("binImages") List<MultipartFile> binImages,
-            @RequestParam("binTypes")  List<String> binTypes,
-            @RequestParam("householdId") Long householdId,
-            @RequestParam("lat") double lat,
-            @RequestParam("lng") double lng
+            @RequestParam("binImages")   List<MultipartFile> binImages,
+            @RequestParam("binTypes")    List<String>        binTypes,
+            @RequestParam("householdId") Long                householdId,
+            @RequestParam("lat")         double              lat,
+            @RequestParam("lng")         double              lng
     ) {
         try {
-            // ── Validate household exists before persisting ────────────────
-            householdRepository.findById(householdId)
-                    .orElseThrow(() -> new RuntimeException("Household not found: " + householdId));
-
-            // ── Count today's attempts for this household ──────────────────
-            LocalDate today = LocalDate.now();
-            long attemptsToday = submissionRepository.countByHouseholdAndSubmittedAtBetween(
-                    householdRepository.findById(householdId).get(),
-                    today.atStartOfDay(),
-                    today.atTime(23, 59, 59));
-
-            if (attemptsToday >= 5) {
-                return ResponseEntity.badRequest().body(Map.of(
-                        "error", "Maximum 5 attempts per day reached."
-                ));
-            }
-
-            // ── Validate image/binType lists match ─────────────────────────
-            if (binImages.size() != binTypes.size()) {
-                return ResponseEntity.badRequest().body(Map.of(
-                        "error", "Number of images (" + binImages.size() +
-                                 ") does not match number of bin types (" + binTypes.size() + ")."
-                ));
-            }
-
-            // ── Persist submission immediately with PROCESSING status ───────
-            SegregationSubmission submission = new SegregationSubmission();
-            submission.setHousehold(householdRepository.findById(householdId).get());
-            submission.setLat(lat);
-            submission.setLng(lng);
-            submission.setAttemptNumber((int) attemptsToday + 1);
-            submission.setStatus(SubmissionStatus.PROCESSING);
-            submission = submissionRepository.save(submission);
-
-            final Long submissionId = submission.getId();
-
-            // ── Build image payloads (read bytes eagerly — MultipartFile is
-            //    request-scoped and won't survive the async thread handoff) ──
-            List<WasteAiService.ImagePayload> images = new ArrayList<>();
-            for (int i = 0; i < binImages.size(); i++) {
-                images.add(new WasteAiService.ImagePayload(
-                        binImages.get(i).getBytes(),
-                        binTypes.get(i)
-                ));
-            }
-
-            // ── Fire async AI processing (non-blocking) ────────────────────
-            processingService.processSubmission(
-                    submissionId,
-                    householdId,
-                    (int) attemptsToday + 1,
-                    images
-            );
-
-            // ── Return 202 immediately ──────────────────────────────────────
-            return ResponseEntity.accepted().body(Map.of(
-                    "submissionId", submissionId,
-                    "status",       "PROCESSING",
-                    "message",      "Waste analysis started. Poll /api/v1/segregation/status/" + submissionId
-            ));
-
-        } catch (RuntimeException e) {
+            return ResponseEntity.accepted()
+                    .body(segregationService.submitSegregationAsync(binImages, binTypes, householdId, lat, lng));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", "Error submitting: " + e.getMessage()));
@@ -147,35 +146,37 @@ public class SegregationController {
 
         return switch (submission.getStatus()) {
 
-            case APPROVED -> ResponseEntity.ok(segregationService.getQRForSubmission(submissionId));
+            case APPROVED -> ResponseEntity.ok(
+                    segregationService.getQRForSubmission(submissionId));
 
             case PENDING_RETRY -> ResponseEntity.ok(Map.of(
-                    "status",       "PENDING_RETRY",
-                    "submissionId", submissionId,
+                    "status",        "PENDING_RETRY",
+                    "submissionId",  submissionId,
                     "failureReason", submission.getFailureReason() != null
                                         ? submission.getFailureReason()
                                         : "One or more bins failed verification.",
-                    "message", "Some bins failed. Please correct and resubmit."
+                    "message",       "Some bins failed. Please correct and resubmit."
             ));
 
             case FAILED -> ResponseEntity.ok(Map.of(
-                    "status",       "FAILED",
-                    "submissionId", submissionId,
+                    "status",        "FAILED",
+                    "submissionId",  submissionId,
                     "failureReason", submission.getFailureReason() != null
                                         ? submission.getFailureReason()
                                         : "All 5 daily attempts failed.",
-                    "message", "All attempts exhausted. A violation has been logged."
+                    "message",       "All attempts exhausted. A violation has been logged."
             ));
 
             case PROCESSING_FAILED -> ResponseEntity.ok(Map.of(
-                    "status",   "PROCESSING_FAILED",
+                    "status",       "PROCESSING_FAILED",
                     "submissionId", submissionId,
-                    "message",  submission.getErrorMessage() != null
-                                    ? submission.getErrorMessage()
-                                    : "AI analysis failed. Please retry later."
+                    "message",      submission.getErrorMessage() != null
+                                        ? submission.getErrorMessage()
+                                        : "AI analysis failed. Please retry later."
             ));
 
-            // PROCESSING or any other transient state
+            case DRAFT -> ResponseEntity.ok(draftService.getDraftStatus(submissionId));
+
             default -> ResponseEntity.ok(Map.of(
                     "status",       "PROCESSING",
                     "submissionId", submissionId,
@@ -185,7 +186,7 @@ public class SegregationController {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // CITIZEN: Get full QR details for a specific submission
+    // CITIZEN: QR details & history
     // ─────────────────────────────────────────────────────────────────────
 
     @GetMapping("/qr/{submissionId}")
@@ -200,82 +201,68 @@ public class SegregationController {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // CITIZEN: Submission history for a household
-    // ─────────────────────────────────────────────────────────────────────
-
     @GetMapping("/history/{householdId}")
     public ResponseEntity<List<SegregationResponseDTO>> getSegregationHistory(
             @PathVariable Long householdId) {
         try {
-            List<SegregationResponseDTO> history = segregationService.getHistoryForHousehold(householdId);
-            return ResponseEntity.ok(history);
+            return ResponseEntity.ok(segregationService.getHistoryForHousehold(householdId));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(null);
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // WORKER: Verify & consume QR (legacy combined endpoint)
+    // WORKER: QR verify / scan / confirm / reject
     // ─────────────────────────────────────────────────────────────────────
 
     @PostMapping("/verify-qr")
     public ResponseEntity<QRScanResponseDTO> verifyQR(
-            @RequestParam("tokenId")    String tokenId,
-            @RequestParam("workerId")   Long workerId,
-            @RequestParam("workerLat")  double workerLat,
-            @RequestParam("workerLng")  double workerLng
+            @RequestParam("tokenId")   String tokenId,
+            @RequestParam("workerId")  Long   workerId,
+            @RequestParam("workerLat") double workerLat,
+            @RequestParam("workerLng") double workerLng
     ) {
         try {
-            QRScanResponseDTO response = segregationService.verifyAndConsumeQR(
-                    tokenId, workerId, workerLat, workerLng);
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(
+                    segregationService.verifyAndConsumeQR(tokenId, workerId, workerLat, workerLng));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(null);
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // WORKER: Scan QR (preview before confirm/reject)
-    // ─────────────────────────────────────────────────────────────────────
-
     @PostMapping("/scan-qr")
     public ResponseEntity<WorkerScanDetailsDTO> scanQR(
-            @RequestParam("tokenId")    String tokenId,
-            @RequestParam("workerLat")  double workerLat,
-            @RequestParam("workerLng")  double workerLng
+            @RequestParam("tokenId")   String tokenId,
+            @RequestParam("workerLat") double workerLat,
+            @RequestParam("workerLng") double workerLng
     ) {
         return ResponseEntity.ok(segregationService.scanQR(tokenId, workerLat, workerLng));
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // WORKER: Confirm pickup
-    // ─────────────────────────────────────────────────────────────────────
-
     @PostMapping("/confirm-pickup")
     public ResponseEntity<WorkerPickupActionDTO> confirmPickup(
-            @RequestParam("tokenId")   String tokenId,
-            @RequestParam("workerId")  Long workerId,
-            @RequestParam("workerLat") double workerLat,
-            @RequestParam("workerLng") double workerLng
+            @RequestParam("tokenId")                               String tokenId,
+            @RequestParam("workerId")                              Long   workerId,
+            @RequestParam("workerLat")                             double workerLat,
+            @RequestParam("workerLng")                             double workerLng,
+            @RequestParam(value = "gpsStatus",      required = false) String gpsStatus,
+            @RequestParam(value = "distanceMetres", required = false) Double distanceMetres
     ) {
         return ResponseEntity.ok(
-                segregationService.confirmPickup(tokenId, workerId, workerLat, workerLng));
+                segregationService.confirmPickup(
+                        tokenId, workerId, workerLat, workerLng,
+                        gpsStatus, distanceMetres));
     }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // WORKER: Reject pickup with proof photos
-    // ─────────────────────────────────────────────────────────────────────
 
     @PostMapping(value = "/reject-pickup", consumes = "multipart/form-data")
     public ResponseEntity<WorkerPickupActionDTO> rejectPickup(
-            @RequestParam("tokenId")                          String tokenId,
-            @RequestParam("workerId")                         Long workerId,
-            @RequestParam("workerLat")                        double workerLat,
-            @RequestParam("workerLng")                        double workerLng,
-            @RequestParam("reason")                           String reason,
-            @RequestParam(value = "subReason", required = false)  String subReason,
-            @RequestParam(value = "remarks",   required = false)  String remarks,
+            @RequestParam("tokenId")                              String              tokenId,
+            @RequestParam("workerId")                             Long                workerId,
+            @RequestParam("workerLat")                            double              workerLat,
+            @RequestParam("workerLng")                            double              workerLng,
+            @RequestParam("reason")                               String              reason,
+            @RequestParam(value = "subReason",   required = false) String             subReason,
+            @RequestParam(value = "remarks",     required = false) String             remarks,
             @RequestParam(value = "proofImages", required = false) List<MultipartFile> proofImages
     ) throws Exception {
         return ResponseEntity.ok(

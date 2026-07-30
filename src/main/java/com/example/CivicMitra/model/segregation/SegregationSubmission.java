@@ -33,6 +33,13 @@ public class SegregationSubmission {
     @OneToMany(mappedBy = "submission", cascade = CascadeType.ALL)
     private List<BinAnalysis> binAnalyses = new ArrayList<>();
 
+    // ── Draft bin images (populated while status = DRAFT) ──────────────────
+    // Rows are added one by one via the /draft/{id}/add-bin endpoint.
+    // They are read and converted to WasteAiService.ImagePayload at finalize time.
+    @OneToMany(mappedBy = "submission", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<DraftBinImage> draftImages = new ArrayList<>();
+
+
     // ── Status ─────────────────────────────────────────────────────────────
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

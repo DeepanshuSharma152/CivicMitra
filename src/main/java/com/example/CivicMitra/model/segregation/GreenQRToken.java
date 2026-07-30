@@ -1,6 +1,7 @@
 package com.example.CivicMitra.model.segregation;
 
 import com.example.CivicMitra.model.core.User;
+import com.example.CivicMitra.model.worker.Worker;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -32,9 +33,19 @@ public class GreenQRToken {
     private LocalDateTime expiresAt;   // set to 2 PM collection cutoff
     private boolean isConsumed = false;
 
+    /** Legacy FK — kept for backward compatibility with existing data. Points to users.id. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "consumed_by_worker_id")
-    private User consumedByWorker;     // which worker scanned it
+    private User consumedByWorker;
+
+    /**
+     * New FK pointing to the dedicated Worker entity (Phase 1+).
+     * New endpoints use workerCode (W-CHA-042) which resolves to this entity.
+     * Null for tokens consumed before the Worker entity migration.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "consumed_by_worker_entity_id")
+    private Worker consumedByWorkerEntity;
 
     private LocalDateTime consumedAt;
 

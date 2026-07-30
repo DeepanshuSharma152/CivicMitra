@@ -65,5 +65,10 @@ public interface HouseholdRepository extends JpaRepository<Household, Long> {
             @Param("lat") double lat,
             @Param("lng") double lng,
             @Param("radiusMetres") double radiusMetres);
-}
 
+    /**
+     * All households in a given ward.
+     * Used by DataSeeder to load Sector 17 households for RouteStop seeding.
+     */
+    List<Household> findByWard_WardId(Long wardId);
+}

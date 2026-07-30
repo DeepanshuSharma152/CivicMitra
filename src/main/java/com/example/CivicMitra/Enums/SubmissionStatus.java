@@ -2,6 +2,12 @@ package com.example.CivicMitra.Enums;
 
 public enum SubmissionStatus {
     /**
+     * Citizen has started a draft submission and is uploading bin images one by one.
+     * The draft can accept add-bin calls until finalized. No AI runs yet.
+     */
+    DRAFT,
+
+    /**
      * Submission received, Ollama is running AI analysis in the background.
      * The citizen can poll /api/v1/segregation/status/{id} to check progress.
      */
