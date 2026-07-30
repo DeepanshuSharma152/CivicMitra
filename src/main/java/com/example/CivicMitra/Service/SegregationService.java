@@ -374,6 +374,11 @@ public class SegregationService {
         return dto;
     }
 
+    @Transactional
+    public WorkerPickupActionDTO confirmPickup(String tokenId, Long workerId, Double workerLat, Double workerLng) {
+        return confirmPickup(tokenId, workerId, workerLat, workerLng, null, null);
+    }
+
     /**
      * Confirms pickup, writes an audit {@link CollectionLog} row, and advances
      * the compliance streak.
