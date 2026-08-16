@@ -9,8 +9,9 @@ import lombok.Setter;
 /**
  * Request body for POST /api/v1/households/register
  *
- * GPS coordinates MUST come from the device — no manual entry allowed.
- * lat/lng are @NotNull, validated server-side.
+ * GPS coordinates are NOT captured at registration time.
+ * lat/lng are intentionally omitted — the first worker scan (Case 3 in
+ * SegregationService.applyGpsProximity) establishes the ground-truth location.
  */
 @Getter
 @Setter
@@ -30,12 +31,16 @@ public class HouseholdRegisterRequest {
              message = "Must be a valid 10-digit Indian mobile number")
     private String mobile;
 
-    /** Captured automatically by navigator.geolocation — NEVER typed */
-    @NotNull(message = "GPS latitude is required. Location access must be enabled.")
+    /**
+     * Optional — not captured at registration.
+     * Set to null on save; populated at first worker QR scan via GPS lock.
+     */
     private Double lat;
 
-    /** Captured automatically by navigator.geolocation — NEVER typed */
-    @NotNull(message = "GPS longitude is required. Location access must be enabled.")
+    /**
+     * Optional — not captured at registration.
+     * Set to null on save; populated at first worker QR scan via GPS lock.
+     */
     private Double lng;
 
     private int numResidents = 1;

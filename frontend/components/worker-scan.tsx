@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Brain, Calendar, Camera, CheckCircle2, ChevronRight,
   CircleAlert, Clock, Eye, FileCheck, Home, Keyboard,
@@ -378,6 +379,7 @@ function CameraScanner({ onDetected, onClose }: CameraScannerProps) {
 // ── WorkerScan Main Component ────────────────────────────────────────────────
 export function WorkerScan() {
   const session = readSession();
+  const searchParams = useSearchParams();
   const [stage, setStage] = useState<Stage>("scan");
   const [token, setToken] = useState("");
   const [details, setDetails] = useState<WorkerScanDetails | null>(null);
@@ -392,6 +394,7 @@ export function WorkerScan() {
   const [scanSuccess, setScanSuccess] = useState(false);
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null); // metres
   const proofInput = useRef<HTMLInputElement>(null);
+  const urlTokenHandled = useRef(false);
 
   const previews = useMemo(() => proofs.map((file) => ({ file, url: URL.createObjectURL(file) })), [proofs]);
 
@@ -411,8 +414,12 @@ export function WorkerScan() {
 
   // Called by CameraScanner when QR is detected
   const handleQrDetected = useCallback(async (scannedText: string) => {
+    // Extract just the UUID if a full URL was scanned (e.g. from phone camera)
+    const urlTokenMatch = scannedText.match(/[?&]token=([a-f0-9-]{36})/i);
+    const resolvedToken = urlTokenMatch ? urlTokenMatch[1] : scannedText.trim();
+
     setShowCamera(false);
-    setToken(scannedText);
+    setToken(resolvedToken);
     setScanSuccess(true);
     setMessage("");
 
@@ -421,7 +428,7 @@ export function WorkerScan() {
     try {
       const coords = await getCoordinates();
       if (coords.accuracy !== undefined) setGpsAccuracy(coords.accuracy);
-      const next = await api.scanQr(scannedText, coords.latitude, coords.longitude);
+      const next = await api.scanQr(resolvedToken, coords.latitude, coords.longitude);
       if (next.scanResult !== "VALID") {
         setMessage(next.message || "Invalid or expired QR token.");
         setScanSuccess(false);
@@ -436,6 +443,16 @@ export function WorkerScan() {
       setLoading(false);
     }
   }, []);
+
+  // Auto-trigger scan when page is opened via QR link (?token=UUID)
+  useEffect(() => {
+    if (urlTokenHandled.current) return;
+    const urlToken = searchParams.get("token");
+    if (urlToken) {
+      urlTokenHandled.current = true;
+      void handleQrDetected(urlToken);
+    }
+  }, [searchParams, handleQrDetected]);
 
   async function scan(event: React.FormEvent) {
     event.preventDefault();

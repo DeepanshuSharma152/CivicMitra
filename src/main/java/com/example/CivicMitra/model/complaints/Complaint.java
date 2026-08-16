@@ -21,7 +21,7 @@ import java.util.Set;
 @Entity
 @Table(name = "complaints")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor
-public class Complaint {
+public class   Complaint {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

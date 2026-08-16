@@ -202,6 +202,16 @@ export function CitizenDashboard() {
                     </a>
                   </div>
                 )}
+
+                {/* Location Pending Badge — shown when no GPS set yet (first pickup will lock it) */}
+                {myHousehold?.hasHousehold && !myHousehold?.lat && (
+                  <div className="mt-2 flex items-center gap-2 rounded-xl border border-sky-200/80 bg-sky-50 px-3.5 py-2.5 shadow-xs">
+                    <MapPin className="size-3.5 shrink-0 text-sky-500" />
+                    <p className="text-xs text-sky-800 font-medium">
+                      <strong className="font-bold">Location pending first pickup</strong> — your ward worker will confirm your address during the first waste collection visit.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Right Household Selector Pill */}
@@ -244,7 +254,7 @@ export function CitizenDashboard() {
               icon={<CheckCircle2 className="size-5 text-[#059669]" />}
               iconBg="bg-emerald-50"
               label="Submissions Approved"
-              value={approved.length || 2}
+              value={approved.length}
               detail="This Month"
               barColor="bg-[#10b981]"
             />
@@ -268,7 +278,7 @@ export function CitizenDashboard() {
               icon={<Gift className="size-5 text-[#059669]" />}
               iconBg="bg-emerald-50"
               label="Rewards Earned"
-              value={streak?.greenPoints || (approved.length ? approved.length * 25 : 50)}
+              value={streak?.greenPoints ?? approved.length * 25}
               detail="Green Points"
               barColor="bg-[#10b981]"
               id="rewards"

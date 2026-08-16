@@ -70,10 +70,17 @@ public class DashboardController {
         response.put("email", user.getEmail());
         response.put("role", user.getRole().name());
         response.put("municipality", user.getMunicipality() == null ? null : user.getMunicipality().getName());
-        response.put("ward", user.getWard() == null ? null : user.getWard().getSectorName());
-        response.put("wardId", user.getWard() == null ? null : user.getWard().getWardId());
-        response.put("householdId", household == null ? null : household.getHouseholdId());
-        response.put("houseNumber", household == null ? null : household.getHouseNumber());
+
+        // Ward lives on the Household for CITIZEN accounts (set at household registration).
+        // Fall back to user.getWard() for AUTHORITY / WORKER accounts which have it set directly.
+        var ward = (household != null && household.getWard() != null)
+                ? household.getWard()
+                : user.getWard();
+        response.put("ward",   ward == null ? null : ward.getSectorName());
+        response.put("wardId", ward == null ? null : ward.getWardId());
+
+        response.put("householdId",  household == null ? null : household.getHouseholdId());
+        response.put("houseNumber",  household == null ? null : household.getHouseNumber());
         return response;
     }
 }

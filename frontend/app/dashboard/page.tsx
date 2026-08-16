@@ -1,6 +1,7 @@
 "use client";
 
-import { useAuth } from "@/app/context/AuthContext";
+// Rule 1: Updated context import to app/_context/ (private directory)
+import { useAuth } from "@/app/_context/AuthContext";
 import { CitizenDashboard } from "@/components/citizen-dashboard";
 import { WorkerScan } from "@/components/worker-scan";
 import { AuthorityReports } from "@/components/authority-reports";
@@ -14,9 +15,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!isLoading && !session) {
-      router.push("/login");
+      // Rule 6: Use router.replace() for auth redirects, never router.push()
+      router.replace("/login");
     }
   }, [session, isLoading, router]);
+
 
   if (isLoading) {
     return (

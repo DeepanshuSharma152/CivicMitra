@@ -16,9 +16,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -31,22 +33,29 @@ import java.util.Set;
 @Service
 public class SegregationDraftService {
 
-    /** Bins that must be present before a draft can be finalized. */
+    /** Mandatory bins that must be present before a draft can be finalized. */
     private static final Set<String> MANDATORY_BINS = Set.of("GREEN", "BLUE");
 
     private final SegregationRepository submissionRepository;
     private final HouseholdRepository householdRepository;
     private final DraftBinImageRepository draftBinImageRepository;
     private final SegregationProcessingService processingService;
+    private final SegregationService segregationService;
+
+    /** When true, finalizeDraft processes synchronously so the response carries the final status. */
+    @org.springframework.beans.factory.annotation.Value("${civicmitra.ai.demo-mode:false}")
+    private boolean demoMode;
 
     public SegregationDraftService(SegregationRepository submissionRepository,
                                    HouseholdRepository householdRepository,
                                    DraftBinImageRepository draftBinImageRepository,
-                                   SegregationProcessingService processingService) {
+                                   SegregationProcessingService processingService,
+                                   SegregationService segregationService) {
         this.submissionRepository   = submissionRepository;
         this.householdRepository    = householdRepository;
         this.draftBinImageRepository = draftBinImageRepository;
         this.processingService      = processingService;
+        this.segregationService     = segregationService;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -64,6 +73,16 @@ public class SegregationDraftService {
     public DraftSubmissionResponseDTO startDraft(Long householdId, double lat, double lng) {
         Household household = householdRepository.findById(householdId)
                 .orElseThrow(() -> new IllegalArgumentException("Household not found: " + householdId));
+
+        // ── Idempotency Check: 30-second window to prevent duplicate submissions ──
+        LocalDateTime thirtySecsAgo = LocalDateTime.now().minusSeconds(30);
+        Optional<SegregationSubmission> recentSubmission = submissionRepository
+                .findTop1ByHousehold_HouseholdIdAndSubmittedAtAfterOrderBySubmittedAtDesc(householdId, thirtySecsAgo);
+        if (recentSubmission.isPresent()) {
+            SegregationSubmission existing = recentSubmission.get();
+            return buildDraftResponse(existing.getId(), List.of());
+        }
+
 
         int attemptNumber = validateAndGetAttemptNumber(household);
 
@@ -131,7 +150,7 @@ public class SegregationDraftService {
      *                                  status, or mandatory bins are missing
      */
     @Transactional
-    public Map<String, Object> finalizeDraft(Long draftId) {
+    public Object finalizeDraft(Long draftId) {
         SegregationSubmission draft = requireOpenDraft(draftId);
 
         List<DraftBinImage> stagedImages = draftBinImageRepository
@@ -166,19 +185,28 @@ public class SegregationDraftService {
                 .map(img -> new WasteAiService.ImagePayload(img.getImageBytes(), img.getBinType()))
                 .toList();
 
-        processingService.processSubmission(
-                draftId,
-                draft.getHousehold().getHouseholdId(),
-                draft.getAttemptNumber(),
-                images
-        );
-
-        return Map.of(
-                "submissionId",  draftId,
-                "status",        "PROCESSING",
-                "binsSubmitted", uploaded,
-                "message",       "Waste analysis started. Poll /api/v1/segregation/status/" + draftId
-        );
+        if (demoMode) {
+            // ── DEMO MODE: run synchronously so the HTTP response already has APPROVED status ──
+            processingService.processSubmissionSync(
+                    draftId,
+                    draft.getHousehold().getHouseholdId(),
+                    draft.getAttemptNumber(),
+                    images);
+            return segregationService.getQRForSubmission(draftId);
+        } else {
+            // ── REAL AI MODE: fire async, frontend must poll ────────────────
+            processingService.processSubmission(
+                    draftId,
+                    draft.getHousehold().getHouseholdId(),
+                    draft.getAttemptNumber(),
+                    images);
+            return Map.of(
+                    "submissionId",  draftId,
+                    "status",        "PROCESSING",
+                    "binsSubmitted", uploaded,
+                    "message",       "Waste analysis started. Poll /api/v1/segregation/status/" + draftId
+            );
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

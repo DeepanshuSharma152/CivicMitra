@@ -44,7 +44,7 @@ export const api = {
 
   // ── Household ─────────────────────────────────────────────────────────────
   getMyHousehold: () => request<MyHousehold>("/api/v1/households/mine"),
-  registerHousehold: (body: { houseNumber: string; wardId: number; blockCode?: string; mobile: string; lat: number; lng: number; numResidents?: number }) =>
+  registerHousehold: (body: { houseNumber: string; wardId: number; blockCode?: string; mobile: string; lat?: number; lng?: number; numResidents?: number }) =>
     request<HouseholdRegistrationResult>("/api/v1/households/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   getWards: (municipalityId: number) => request<WardOption[]>(`/api/v1/households/wards?municipalityId=${municipalityId}`),
   getStreak: (householdId: number) => request<{ currentStreakDays: number; longestStreakDays: number; totalVerifiedPickups: number; greenPoints: number; verificationStatus: string }>(`/api/v1/households/${householdId}/streak`),

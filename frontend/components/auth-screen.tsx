@@ -13,7 +13,8 @@ import {
 
 import { api } from "@/lib/api";
 import { saveSession } from "@/lib/session";
-import { useAuth } from "@/app/context/AuthContext";
+// Rule 1: Updated context import to app/_context/ (private directory)
+import { useAuth } from "@/app/_context/AuthContext";
 import { Logo } from "@/components/Logo";
 import type { OtpSendResult, UserRole } from "@/lib/types";
 

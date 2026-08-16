@@ -4,8 +4,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import type { HouseholdMatch, HouseholdRegistrationResult, WardOption } from "@/lib/types";
 import {
-  MapPin, Home, Phone, Loader2, CheckCircle2,
-  AlertCircle, Navigation, Building2, ChevronRight, ShieldCheck, Info
+  MapPin, Home, Phone, CheckCircle2,
+  AlertCircle, Building2, ChevronRight, ShieldCheck, Info, Truck
 } from "lucide-react";
 
 interface Props {
@@ -14,25 +14,7 @@ interface Props {
   onComplete: (householdCode: string) => void;
 }
 
-type Step = "form" | "gps-loading" | "duplicate-check" | "success";
-
-function getCurrentPosition(): Promise<{ lat: number; lng: number }> {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error("Your browser does not support location services."));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => resolve({ lat: coords.latitude, lng: coords.longitude }),
-      (err) => reject(new Error(
-        err.code === 1
-          ? "Location access denied. Please enable GPS in your browser settings and try again."
-          : "Could not get your location. Please check your GPS and try again."
-      )),
-      { enableHighAccuracy: true, timeout: 15_000 }
-    );
-  });
-}
+type Step = "form" | "duplicate-check" | "success";
 
 /**
  * Multi-step household registration wizard with integrated DPDP consent.
@@ -109,26 +91,13 @@ export function HouseholdSetupFlow({ municipalityId = 1, initialMobile, onComple
       }
     }
 
-    // GPS capture — blocking
-    setStep("gps-loading");
-    let gps: { lat: number; lng: number };
-    try {
-      gps = await getCurrentPosition();
-    } catch (gpsErr) {
-      setError(gpsErr instanceof Error ? gpsErr.message : "GPS failed.");
-      setStep("form");
-      return;
-    }
-
-    // Submit to backend
+    // Submit to backend — no GPS at registration, location confirmed at first pickup
     try {
       const res = await api.registerHousehold({
         houseNumber,
         wardId: wardId as number,
         blockCode: blockCode || undefined,
         mobile,
-        lat: gps.lat,
-        lng: gps.lng,
         numResidents,
       });
 
@@ -146,21 +115,6 @@ export function HouseholdSetupFlow({ municipalityId = 1, initialMobile, onComple
     }
   }, [houseNumber, wardId, blockCode, mobile, numResidents, dpdpGiven, dpdpChecked, onComplete]);
 
-  // ── GPS Loading screen ────────────────────────────────────────────────────
-  if (step === "gps-loading") {
-    return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-        <div className="flex size-16 items-center justify-center rounded-full bg-emerald-50">
-          <Navigation className="size-8 animate-pulse text-emerald-600" />
-        </div>
-        <p className="text-[17px] font-semibold text-slate-800">Locating you…</p>
-        <p className="max-w-xs text-[14px] text-slate-500">
-          Your GPS location is being captured automatically. Please don't close this page.
-        </p>
-        <Loader2 className="mt-2 size-6 animate-spin text-emerald-500" />
-      </div>
-    );
-  }
 
   // ── Duplicate check screen ────────────────────────────────────────────────
   if (step === "duplicate-check") {
@@ -265,7 +219,7 @@ export function HouseholdSetupFlow({ municipalityId = 1, initialMobile, onComple
       <div>
         <h3 className="text-[18px] font-semibold text-slate-900">Register your household</h3>
         <p className="mt-1 text-[14px] text-slate-500">
-          Your GPS will be captured automatically — no manual coordinates needed.
+          Fill in your address details. No GPS is required at this step.
         </p>
       </div>
 
@@ -354,12 +308,12 @@ export function HouseholdSetupFlow({ municipalityId = 1, initialMobile, onComple
         </p>
       </div>
 
-      {/* GPS notice — no manual field */}
-      <div className="flex items-start gap-3 rounded-xl bg-slate-50 border border-slate-200 p-3">
-        <Navigation className="mt-0.5 size-4 shrink-0 text-emerald-600" />
-        <p className="text-[13px] text-slate-600">
-          <strong>GPS is captured automatically</strong> when you click Register — no manual entry.
-          Your browser will ask for location permission.
+      {/* Location info notice */}
+      <div className="flex items-start gap-3 rounded-xl bg-blue-50 border border-blue-200 p-3">
+        <Truck className="mt-0.5 size-4 shrink-0 text-blue-600" />
+        <p className="text-[13px] text-blue-800">
+          Your household location will be verified during the{" "}
+          <strong>first waste collection visit</strong> by your ward worker.
         </p>
       </div>
 
@@ -385,7 +339,7 @@ export function HouseholdSetupFlow({ municipalityId = 1, initialMobile, onComple
               </span>
             </div>
             <p className="mt-1 text-[12px] leading-relaxed text-slate-600">
-              Under the Digital Personal Data Protection Act 2023, CivicMitra processes your bin photos and GPS coordinates solely for automated waste audit and QR generation.
+              Under the Digital Personal Data Protection Act 2023, CivicMitra processes your bin photos and GPS coordinates (captured at first worker visit) solely for automated waste audit and QR generation.
             </p>
           </div>
         </div>
@@ -399,7 +353,7 @@ export function HouseholdSetupFlow({ municipalityId = 1, initialMobile, onComple
               className="size-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
             />
             <span className="text-[13px] font-semibold text-slate-800">
-              I consent to photo capture, GPS verification & AI waste auditing *
+              I consent to bin photo capture, worker GPS verification &amp; AI waste auditing *
             </span>
           </label>
         )}

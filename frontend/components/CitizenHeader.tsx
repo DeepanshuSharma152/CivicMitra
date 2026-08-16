@@ -11,7 +11,8 @@ import {
   X,
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
-import { useAuth } from "../app/context/AuthContext";
+// Rule 1: Updated context import to app/_context/ (private directory)
+import { useAuth } from "@/app/_context/AuthContext";
 import type { Profile } from "@/lib/types";
 
 interface CitizenHeaderProps {
@@ -32,10 +33,10 @@ export function CitizenHeader({ activeTab = "dashboard", profile, onOpenHousehol
   const navLinks = [
     { label: "Dashboard", href: "/dashboard", key: "dashboard" },
     { label: "Submit Waste", href: "/citizen/submit", key: "submit" },
-    { label: "My Submissions", href: "/dashboard#submissions", key: "submissions" },
-    { label: "My QR Tokens", href: "/dashboard#pass", key: "tokens" },
-    { label: "Collection Schedule", href: "/dashboard#collection", key: "schedule" },
-    { label: "Rewards & Badges", href: "/dashboard#rewards", key: "rewards" },
+    { label: "My Submissions", href: "/citizen/submissions", key: "submissions" },
+    { label: "My QR Tokens", href: "/citizen/tokens", key: "tokens" },
+    { label: "Collection Schedule", href: "/citizen/schedule", key: "schedule" },
+    { label: "Rewards & Badges", href: "/citizen/rewards", key: "rewards" },
     { label: "Grievances", href: "/grievances", key: "grievances" },
   ];
 

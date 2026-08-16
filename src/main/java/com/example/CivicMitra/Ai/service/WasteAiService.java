@@ -23,6 +23,10 @@ public class WasteAiService {
     @Value("${ollama.model:gemma3:4b}")
     private String ollamaModel;
 
+    /** When true, skip real Ollama inference and return instant APPROVED mock results. */
+    @Value("${civicmitra.ai.demo-mode:false}")
+    private boolean demoMode;
+
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -90,6 +94,17 @@ public class WasteAiService {
             throw new IllegalArgumentException("No images provided");
         }
 
+        // ── DEMO MODE: skip real Ollama call, return instant mock results ─────
+        if (demoMode) {
+            log.info("[DEMO MODE] Skipping Ollama inference for {} images — returning instant APPROVED mock.", images.size());
+            List<WasteAnalysis> demoResults = new ArrayList<>();
+            for (ImagePayload img : images) {
+                demoResults.add(buildFallbackAnalysis(img.getBinType()));
+            }
+            return demoResults;
+        }
+
+        // ── REAL MODE: call Ollama ────────────────────────────────────────────
         List<String> base64Images = images.stream()
                 .map(img -> Base64.getEncoder().encodeToString(img.getImageBytes()))
                 .toList();

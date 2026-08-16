@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, FormEvent, useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
+// Rule 1: Updated context import to app/_context/ (private directory)
+import { useAuth } from "@/app/_context/AuthContext";
 import { QRScanResponse, verifyQr, ApiError } from "../../lib/api";
 import { useRouter } from "next/navigation";
 

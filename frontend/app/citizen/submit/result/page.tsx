@@ -15,6 +15,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { readSession } from "@/lib/session";
 import type { BinColor, Submission } from "@/lib/types";
 import { CitizenHeader } from "@/components/CitizenHeader";
+import { api } from "@/lib/api";
 
 function formatDate(value?: string | null) {
   return value ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "--";
@@ -50,9 +51,21 @@ function ResultContent() {
   useEffect(() => {
     const data = sessionStorage.getItem("lastSubmissionResult");
     if (data) {
-      setResult(JSON.parse(data));
-      // Optional: Clear it so it doesn't persist forever
-      // sessionStorage.removeItem("lastSubmissionResult");
+      const parsed = JSON.parse(data);
+      const subId = parsed.submissionId || parsed.id;
+      if (subId && (!parsed.binResults || parsed.binResults.length === 0)) {
+        // Fetch the fully populated details from the API
+        api.getStatus(subId)
+          .then((fullData) => {
+            setResult(fullData);
+          })
+          .catch((err) => {
+            console.error("Error fetching full status in result content:", err);
+            setResult(parsed);
+          });
+      } else {
+        setResult(parsed);
+      }
     } else {
       router.push("/citizen/submit");
     }
@@ -173,8 +186,8 @@ function ResultContent() {
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
           className="mt-12 grid divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-sm sm:grid-cols-4 sm:divide-x sm:divide-y-0"
         >
-          <ResultMetric delay={0.6} icon={<Award className="size-6" />} label="Overall score" value={`${Math.round(result.overallScore)}%`} detail="Excellent" tone="emerald" />
-          <ResultMetric delay={0.7} icon={<BarChart3 className="size-6" />} label="Attempt" value={`${result.attemptNumber} / 5`} detail="Today" tone="blue" />
+          <ResultMetric delay={0.6} icon={<Award className="size-6" />} label="Overall score" value={`${result.overallScore != null ? (result.overallScore <= 1.0 ? Math.round(result.overallScore * 100) : Math.round(result.overallScore)) : 0}%`} detail="Excellent" tone="emerald" />
+          <ResultMetric delay={0.7} icon={<BarChart3 className="size-6" />} label="Attempt" value={`${result.attemptNumber || 0} / 5`} detail="Today" tone="blue" />
           <ResultMetric delay={0.8} icon={<CalendarDays className="size-6" />} label="Next pickup" value="Tomorrow" detail="7:00 AM - 9:00 AM" tone="amber" />
           <ResultMetric delay={0.9} icon={<Gift className="size-6" />} label="Rewards" value="+20" detail="Green points" tone="violet" />
         </motion.section>
@@ -193,7 +206,7 @@ function ResultContent() {
               </div>
 
               <div className="mt-8 divide-y divide-slate-100">
-                {result.binResults.map((bin, i) => (
+                {(result.binResults || []).map((bin, i) => (
                   <motion.div 
                     initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 1.1 + (i * 0.1) }}
                     key={bin.binType} className="flex flex-col sm:flex-row sm:items-center gap-4 py-5"

@@ -19,3 +19,5 @@ application-local.properties
 # Next.js build artifacts and local packages
 frontend/node_modules/
 frontend/.next/
+*temp_original_page*
+

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { useAuth } from "../app/context/AuthContext";
+// Rule 1: Updated context import to app/_context/ (private directory)
+import { useAuth } from "@/app/_context/AuthContext";
 import { ChevronDown, LogOut, ShieldCheck, User } from "lucide-react";
 import { Logo } from "./Logo";
 

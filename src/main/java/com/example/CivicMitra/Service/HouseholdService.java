@@ -80,12 +80,16 @@ public class HouseholdService {
     /**
      * Registers a self-reported household through the 3-guardrail flow.
      *
-     * Guardrail 1: GPS comes from the frontend — lat/lng validated @NotNull in DTO.
-     * Guardrail 2: Duplicate detection — fuzzy match on ward + house no + 50m radius.
+     * Guardrail 1: GPS is NOT collected at registration. lat/lng are always null
+     *              on initial save. The first worker scan (Case 3 —
+     *              applyGpsProximity in SegregationService) establishes the
+     *              ground-truth location and sets gpsLocked = true.
+     * Guardrail 2: Duplicate detection — fuzzy match on ward + house no.
+     *              (GPS radius check skipped when coordinates are null.)
      * Guardrail 3: PROVISIONAL status + verification queue entry with 14-day SLA.
      *
      * @param userEmail the authenticated user's email
-     * @param req       validated request from the frontend (GPS included)
+     * @param req       validated request from the frontend (no GPS fields)
      * @return result map with status, householdCode, or potentialMatches
      */
     @Transactional
@@ -111,10 +115,14 @@ public class HouseholdService {
             h.setPrimaryResident(user);
         }
 
-        // ── Guardrail 2: Duplicate detection ─────────────────────────────────
+        // ── Guardrail 2: Duplicate detection (GPS radius skipped when coordinates are null) ────
         String normalized = normalizeHouseNumber(req.getHouseNumber());
+        // Only run GPS-radius duplicate check when registration coordinates are present
+        double reqLat = req.getLat() != null ? req.getLat() : 0.0;
+        double reqLng = req.getLng() != null ? req.getLng() : 0.0;
         List<Household> duplicates = householdRepository.findDuplicateCandidates(
-                req.getWardId(), normalized, req.getLat(), req.getLng(), 50.0);
+                req.getWardId(), normalized, reqLat, reqLng,
+                (req.getLat() != null && req.getLng() != null) ? 50.0 : 0.0);
 
         if (isUpdate) {
             final Long existingId = h.getHouseholdId();
@@ -152,8 +160,10 @@ public class HouseholdService {
         h.setHouseNumber(normalized);
         h.setBlockCode(req.getBlockCode());
         h.setRegisteredMobile(req.getMobile());
-        h.setLat(req.getLat());          // auto-captured GPS, never typed
-        h.setLng(req.getLng());
+        // GPS is null at registration — set only when coordinates are provided.
+        // Ground-truth location is established at first worker scan (gpsLocked = true).
+        h.setLat(req.getLat());   // null by design
+        h.setLng(req.getLng());   // null by design
         h.setVerificationStatus(Household.VerificationStatus.PROVISIONAL);
         h.setHasApp(true);
         householdRepository.save(h);

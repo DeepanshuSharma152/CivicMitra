@@ -14,6 +14,7 @@ import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +43,13 @@ public class SegregationProcessingService {
 
     private static final Logger log = LoggerFactory.getLogger(SegregationProcessingService.class);
 
+    /** Skips real Ollama inference and returns instant APPROVED result for demo/hackathon use. */
+    @org.springframework.beans.factory.annotation.Value("${civicmitra.app.base-url:http://localhost:3000}")
+    private String appBaseUrl;
+
+    @Value("${civicmitra.ai.demo-mode:false}")
+    private boolean demoMode;
+
     private final WasteAiService wasteAiService;
     private final SegregationRepository submissionRepository;
     private final HouseholdRepository householdRepository;
@@ -60,15 +68,47 @@ public class SegregationProcessingService {
         this.scoringEngine = scoringEngine;
     }
 
+    /**
+     * Async entry point — used for the REAL AI path (demoMode=false).
+     * Runs on a background thread so the HTTP request returns immediately with 202.
+     * Do NOT call this when demoMode=true; use {@link #processSubmissionSync} instead.
+     */
     @Async("wasteTaskExecutor")
     @Transactional
     public void processSubmission(Long submissionId,
                                   Long householdId,
                                   int attemptNumber,
                                   List<WasteAiService.ImagePayload> images) {
+        doProcessSubmission(submissionId, householdId, attemptNumber, images);
+    }
+
+    /**
+     * Synchronous entry point — used ONLY when demoMode=true.
+     * Runs on the caller's thread so the HTTP response already contains the
+     * final APPROVED status — no polling needed on the frontend.
+     * The @Async annotation is intentionally absent.
+     */
+    @Transactional
+    public void processSubmissionSync(Long submissionId,
+                                      Long householdId,
+                                      int attemptNumber,
+                                      List<WasteAiService.ImagePayload> images) {
+        log.info("[DEMO MODE] Processing submission {} synchronously — bypassing thread pool.", submissionId);
+        doProcessSubmission(submissionId, householdId, attemptNumber, images);
+    }
+
+    /**
+     * Core processing logic shared by both the async and sync entry points.
+     * Loads the submission, runs AI (or skips it in demo mode), scores,
+     * persists results, and generates a QR token if approved.
+     */
+    private void doProcessSubmission(Long submissionId,
+                                     Long householdId,
+                                     int attemptNumber,
+                                     List<WasteAiService.ImagePayload> images) {
         SegregationSubmission submission = null;
         try {
-            // ── Step 1: Reload submission (we are on a different thread now) ──
+            // ── Step 1: Load submission and household ──────────────────────────
             submission = submissionRepository.findById(submissionId)
                     .orElseThrow(() -> new RuntimeException("Submission not found: " + submissionId));
 
@@ -77,6 +117,37 @@ public class SegregationProcessingService {
 
             // Link household now that we have it
             submission.setHousehold(household);
+
+            // ── DEMO MODE: bypass entire AI pipeline, instantly approve ──────
+            if (demoMode) {
+                log.info("[DEMO MODE] Instantly approving submission {} — skipping Ollama.", submissionId);
+                List<BinAnalysis> demoBins = new ArrayList<>();
+                for (int i = 0; i < images.size(); i++) {
+                    String expectedType = images.get(i).getBinType();
+                    BinAnalysis bin = new BinAnalysis();
+                    bin.setSubmission(submission);
+                    bin.setExpectedBinType(parseBinType(expectedType));
+                    bin.setDetectedBinType(parseBinType(expectedType));
+                    bin.setAiConfidence(0.95);
+                    bin.setCorrectBinType(true);
+                    bin.setHasCrossContamination(false);
+                    bin.setContaminationDetail("");
+                    bin.setSuspicious(false);
+                    bin.setEmpty(false);
+                    bin.setProperlyWrapped(true);
+                    bin.setPassed(true);
+                    demoBins.add(bin);
+                }
+                submission.getBinAnalyses().addAll(demoBins);
+                submission.setOverallScore(0.95);
+                submission.setAttemptNumber(attemptNumber);
+                submission.setStatus(SubmissionStatus.APPROVED);
+                GreenQRToken demoQr = generateQRToken(submission, household);
+                submission.setQrToken(demoQr);
+                submissionRepository.save(submission);
+                log.info("[DEMO MODE] Submission {} APPROVED instantly with QR token.", submissionId);
+                return;
+            }
 
             // ── Step 2: Single Ollama call for all images ─────────────────────
             log.info("Starting Ollama analysis for submission {} ({} images)", submissionId, images.size());
@@ -115,20 +186,14 @@ public class SegregationProcessingService {
 
             if (result.passed()) {
                 submission.setStatus(SubmissionStatus.APPROVED);
-
-                // Generate and persist Green QR Token
                 GreenQRToken qr = generateQRToken(submission, household);
                 submission.setQrToken(qr);
-
                 log.info("Submission {} APPROVED — QR token issued", submissionId);
             } else {
-                // 5th failed attempt → permanent FAILED (violation logged)
-                // 1st to 4th → PENDING_RETRY (citizen may resubmit)
                 SubmissionStatus failStatus = (attemptNumber >= 5)
                         ? SubmissionStatus.FAILED
                         : SubmissionStatus.PENDING_RETRY;
                 submission.setStatus(failStatus);
-
                 log.info("Submission {} {} — reason: {}", submissionId, failStatus, result.failureReason());
             }
 
@@ -137,7 +202,6 @@ public class SegregationProcessingService {
         } catch (Exception e) {
             log.error("Processing failed for submission {}: {}", submissionId, e.getMessage(), e);
             try {
-                // Reload in case the earlier load itself failed
                 if (submission == null) {
                     submission = submissionRepository.findById(submissionId).orElse(null);
                 }
@@ -211,8 +275,10 @@ public class SegregationProcessingService {
      */
     private String generateQRCodeBase64(String tokenText) {
         try {
+            // Encode a full URL so phone cameras open the worker scan page directly
+            String qrContent = appBaseUrl + "/worker/scan?token=" + tokenText;
             QRCodeWriter writer = new QRCodeWriter();
-            BitMatrix matrix = writer.encode(tokenText, BarcodeFormat.QR_CODE, 250, 250);
+            BitMatrix matrix = writer.encode(qrContent, BarcodeFormat.QR_CODE, 250, 250);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             MatrixToImageWriter.writeToStream(matrix, "PNG", out);
             return Base64.getEncoder().encodeToString(out.toByteArray());

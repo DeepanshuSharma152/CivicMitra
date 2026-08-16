@@ -43,6 +43,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -58,6 +59,13 @@ public class SegregationService {
     private final UserRepository userRepository;
     private final SegregationProcessingService processingService;
     private final CollectionLogRepository collectionLogRepository;
+
+    /** Mirror of the flag in SegregationProcessingService — controls sync vs async path. */
+    @org.springframework.beans.factory.annotation.Value("${civicmitra.app.base-url:http://localhost:3000}")
+    private String appBaseUrl;
+
+    @org.springframework.beans.factory.annotation.Value("${civicmitra.ai.demo-mode:false}")
+    private boolean demoMode;
 
     public SegregationService(SegregationRepository segregationRepository,
                               HouseholdRepository householdRepository,
@@ -94,7 +102,7 @@ public class SegregationService {
      * @throws IllegalStateException    if daily attempt limit is reached
      */
     @Transactional
-    public Map<String, Object> submitSegregationAsync(
+    public Object submitSegregationAsync(
             List<MultipartFile> binImages,
             List<String> binTypes,
             Long householdId,
@@ -103,6 +111,20 @@ public class SegregationService {
 
         Household household = householdRepository.findById(householdId)
                 .orElseThrow(() -> new IllegalArgumentException("Household not found: " + householdId));
+
+        // ── Idempotency Check: 30-second window to prevent duplicate submissions ──
+        LocalDateTime thirtySecsAgo = LocalDateTime.now().minusSeconds(30);
+        Optional<SegregationSubmission> recentSubmission = segregationRepository
+                .findTop1ByHousehold_HouseholdIdAndSubmittedAtAfterOrderBySubmittedAtDesc(householdId, thirtySecsAgo);
+        if (recentSubmission.isPresent()) {
+            SegregationSubmission existing = recentSubmission.get();
+            return Map.of(
+                    "submissionId", existing.getId(),
+                    "status",       existing.getStatus().name(),
+                    "message",      "Recent submission exists. Poll /api/v1/segregation/status/" + existing.getId()
+            );
+        }
+
 
         LocalDate today = LocalDate.now();
         long attemptsToday = segregationRepository.countByHouseholdAndSubmittedAtBetween(
@@ -137,14 +159,23 @@ public class SegregationService {
                     binImages.get(i).getBytes(), binTypes.get(i)));
         }
 
-        processingService.processSubmission(
-                submissionId, householdId, (int) attemptsToday + 1, images);
-
-        return Map.of(
-                "submissionId", submissionId,
-                "status",       "PROCESSING",
-                "message",      "Waste analysis started. Poll /api/v1/segregation/status/" + submissionId
-        );
+        if (demoMode) {
+            // ── DEMO MODE: process synchronously, skip thread pool entirely ─────────
+            // The caller's @Transactional keeps everything in one transaction.
+            // When this method returns, status is already APPROVED in the DB.
+            processingService.processSubmissionSync(
+                    submissionId, householdId, (int) attemptsToday + 1, images);
+            return getQRForSubmission(submissionId);
+        } else {
+            // ── REAL AI MODE: fire async, return 202 PROCESSING ─────────────────
+            processingService.processSubmission(
+                    submissionId, householdId, (int) attemptsToday + 1, images);
+            return Map.of(
+                    "submissionId", submissionId,
+                    "status",       "PROCESSING",
+                    "message",      "Waste analysis started. Poll /api/v1/segregation/status/" + submissionId
+            );
+        }
     }
 
     // ─────────────────────────────────────────────────────────
@@ -605,16 +636,17 @@ public class SegregationService {
     // ─────────────────────────────────────────────────────────
     private String generateQRCodeBase64(String tokenText) {
         try {
+            // Encode a full URL so phone cameras open the worker scan page directly
+            String qrContent = appBaseUrl + "/worker/scan?token=" + tokenText;
             QRCodeWriter writer = new QRCodeWriter();
             BitMatrix matrix = writer.encode(
-                    tokenText, BarcodeFormat.QR_CODE, 250, 250);
+                    qrContent, BarcodeFormat.QR_CODE, 250, 250);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             MatrixToImageWriter.writeToStream(matrix, "PNG", out);
             return Base64.getEncoder()
                     .encodeToString(out.toByteArray());
         } catch (Exception e) {
             // QR image failure should not fail the whole response
-            // Token UUID is still returned — frontend can regenerate
             return null;
         }
     }

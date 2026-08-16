@@ -35,6 +35,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth-> auth
                         .requestMatchers(
                                 "/",
+                                "/error",
                                 "/dashboard",
                                 "/auth-home.css",
                                 "/auth-home.js",

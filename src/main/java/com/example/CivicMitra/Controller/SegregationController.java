@@ -9,6 +9,8 @@ import com.example.CivicMitra.Service.SegregationDraftService;
 import com.example.CivicMitra.Service.SegregationService;
 import com.example.CivicMitra.model.segregation.SegregationSubmission;
 import com.example.CivicMitra.Repository.SegregationRepository;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -104,6 +106,14 @@ public class SegregationController {
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", "Error finalizing draft: " + e.getMessage()));
         }
+    }
+
+    @Value("${civicmitra.ai.demo-mode:false}")
+    private boolean demoMode;
+
+    @GetMapping("/debug/demo")
+    public String checkDemo() {
+        return "demoMode=" + demoMode;
     }
 
     // ─────────────────────────────────────────────────────────────────────
