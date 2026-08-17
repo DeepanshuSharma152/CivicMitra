@@ -151,11 +151,11 @@ export default function MyTokensPage() {
                     <div>
                       <p className="text-xs font-semibold text-emerald-200">TOKEN ID</p>
                       <p className="text-sm font-mono font-bold tracking-wider text-white">
-                        {activeToken.qrTokenId || "CVM-QR-ACTIVE"}
+                        {activeToken.qrToken || "CVM-QR-ACTIVE"}
                       </p>
                     </div>
                     <div className="text-xs text-emerald-100 bg-white/10 rounded-xl p-2.5 border border-white/10">
-                      Expires: {formatDate(activeToken.qrExpiresAt)} at {formatTime(activeToken.qrExpiresAt)}
+                      Expires: {formatDate(activeToken.qrExpiresAt ?? undefined)} at {formatTime(activeToken.qrExpiresAt ?? undefined)}
                     </div>
                   </div>
                 ) : (
@@ -215,18 +215,20 @@ export default function MyTokensPage() {
                       </div>
                     </div>
 
-                    <a
-                      href={
-                        item.qrCodeBase64.startsWith("data:image")
-                          ? item.qrCodeBase64
-                          : `data:image/png;base64,${item.qrCodeBase64}`
-                      }
-                      download={`GreenQR_${item.qrToken || item.submissionId}.png`}
-                      className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-emerald-700 transition-colors shrink-0"
-                      title="Download QR Image"
-                    >
-                      <Download className="size-4" />
-                    </a>
+                    {item.qrCodeBase64 && (
+                      <a
+                        href={
+                          item.qrCodeBase64.startsWith("data:image")
+                            ? item.qrCodeBase64
+                            : `data:image/png;base64,${item.qrCodeBase64}`
+                        }
+                        download={`GreenQR_${item.qrToken || item.submissionId}.png`}
+                        className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-emerald-700 transition-colors shrink-0"
+                        title="Download QR Image"
+                      >
+                        <Download className="size-4" />
+                      </a>
+                    )}
                   </Card>
                 ))
               )}

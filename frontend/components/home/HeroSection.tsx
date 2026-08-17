@@ -31,11 +31,11 @@ const container = {
 };
 const item = {
   hidden: { opacity: 0, y: 24 },
-  show:   { opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] } },
+  show:   { opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] as const } },
 };
 const phoneAnim = {
   hidden: { opacity: 0, scale: 0.94, y: 18 },
-  show:   { opacity: 1, scale: 1,    y: 0,  transition: { duration: 0.75, ease: [0.22, 1, 0.36, 1], delay: 0.18 } },
+  show:   { opacity: 1, scale: 1,    y: 0,  transition: { duration: 0.75, ease: [0.22, 1, 0.36, 1] as const, delay: 0.18 } },
 };
 
 // ── Trust bar data ──────────────────────────────────────────────────────────
