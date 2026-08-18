@@ -6,7 +6,7 @@ import { useAuth } from "@/app/_context/AuthContext";
 import { QRScanResponse, verifyQr, ApiError } from "../../lib/api";
 import { useRouter } from "next/navigation";
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080";
 
 function getCurrentPosition(): Promise<{ lat: number; lng: number }> {
   return new Promise((resolve, reject) => {
