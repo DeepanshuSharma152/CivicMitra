@@ -30,13 +30,13 @@ export const api = {
   // ── Auth ──────────────────────────────────────────────────────────────────
   login: (email: string, password: string) => request<{ token: string; email: string; name: string; role: UserRole; userId: number }>("/api/v1/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }, false),
   workerLogin: (workerCode: string, pin: string) => request<{ token: string; workerCode: string; name: string; role: string; workerId: number; municipalityId?: number; wardId?: number; routeId?: number }>("/api/v1/worker/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workerCode, pin }) }, false),
-  sendLoginOtp: (email: string) => request<OtpSendResult>(`/api/v1/auth/login-otp/send?email=${encodeURIComponent(email)}`, { method: "POST" }, false),
+  sendLoginOtp: (email: string) => request<OtpSendResult>(`/api/v1/auth/login-otp/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) }, false),
   verifyLoginOtp: (email: string, pass: string, otp: string) => request<{ token: string; email: string; name: string; role: UserRole; userId: number }>("/api/v1/auth/login-otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: pass, otp }) }, false),
   register: (body: Record<string, unknown>) => request("/api/v1/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, false),
 
   // ── OTP (unauthenticated — used during registration & login flows) ─────────
-  sendOtp: (phone: string) => request<OtpSendResult>(`/api/v1/otp/send?identifier=${encodeURIComponent(phone)}`, { method: "POST" }, false),
-  verifyOtp: (phone: string, otp: string) => request<{ status: string; message: string }>(`/api/v1/otp/verify?identifier=${encodeURIComponent(phone)}&otp=${encodeURIComponent(otp)}`, { method: "POST" }, false),
+  sendOtp: (phone: string) => request<OtpSendResult>(`/api/v1/otp/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: phone }) }, false),
+  verifyOtp: (phone: string, otp: string) => request<{ status: string; message: string }>(`/api/v1/otp/verify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: phone, otp }) }, false),
 
   // ── DPDP Consent ─────────────────────────────────────────────────────────
   getDpdpStatus: () => request<DPDPStatus>("/api/v1/consent/dpdp/status"),

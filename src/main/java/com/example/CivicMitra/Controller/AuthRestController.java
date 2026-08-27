@@ -84,17 +84,26 @@ public class AuthRestController {
     }
 
     /**
-     * POST /api/v1/auth/login-otp/send?email={email}
-     * Industry-grade 2-step Login OTP generation backend endpoint.
+     * POST /api/v1/auth/login-otp/send
+     * Accepts email via JSON body (primary) or query param (fallback).
+     * Body JSON: { "email": "user@example.com" }
      */
     @PostMapping("/login-otp/send")
-    public ResponseEntity<?> sendLoginOtp(@RequestParam String email) {
-        if (email == null || email.isBlank()) {
+    public ResponseEntity<?> sendLoginOtp(
+            @RequestBody(required = false) Map<String, String> body,
+            @RequestParam(required = false) String email) {
+
+        // Prefer JSON body → query param (CloudFront strips query strings)
+        String resolvedEmail = null;
+        if (body != null) resolvedEmail = body.get("email");
+        if (resolvedEmail == null || resolvedEmail.isBlank()) resolvedEmail = email;
+
+        if (resolvedEmail == null || resolvedEmail.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Email parameter is required."));
         }
 
-        User user = userService.findByEmail(email.trim())
-                .orElseThrow(() -> new RuntimeException("No registered account found with email: " + email));
+        User user = userService.findByEmail(resolvedEmail.trim())
+                .orElseThrow(() -> new RuntimeException("No registered account found with email: " + resolvedEmail));
 
         OtpResponseDTO response = otpService.generateOtpResponse(user.getEmail());
         return ResponseEntity.ok(response);

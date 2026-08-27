@@ -22,20 +22,28 @@ public class OtpController {
     }
 
     /**
-     * POST /api/v1/otp/send?identifier={phone_or_email}
+     * POST /api/v1/otp/send
+     * Accepts identifier via JSON body (primary) or query param (fallback).
+     * Body JSON: { "identifier": "9988775544" }
      */
     @PostMapping("/send")
-    public ResponseEntity<?> sendOtp(@RequestParam(required = false) String phone,
-                                    @RequestParam(required = false) String identifier) {
-        String key = (identifier != null && !identifier.isBlank()) ? identifier : phone;
+    public ResponseEntity<?> sendOtp(
+            @RequestBody(required = false) Map<String, String> body,
+            @RequestParam(required = false) String identifier,
+            @RequestParam(required = false) String phone) {
+
+        // Prefer JSON body → query param identifier → query param phone
+        String key = null;
+        if (body != null) {
+            key = body.get("identifier");
+            if (key == null || key.isBlank()) key = body.get("phone");
+        }
+        if (key == null || key.isBlank()) key = identifier;
+        if (key == null || key.isBlank()) key = phone;
+
         if (key == null || key.isBlank()) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "Target phone number or identifier is required."));
-        }
-
-        if (otpService.hasLiveOtp(key)) {
-            OtpResponseDTO response = otpService.generateOtpResponse(key);
-            return ResponseEntity.ok(response);
         }
 
         OtpResponseDTO response = otpService.generateOtpResponse(key);
@@ -43,19 +51,38 @@ public class OtpController {
     }
 
     /**
-     * POST /api/v1/otp/verify?identifier={phone_or_email}&otp={otp}
+     * POST /api/v1/otp/verify
+     * Accepts identifier+otp via JSON body (primary) or query params (fallback).
+     * Body JSON: { "identifier": "9988775544", "otp": "123456" }
      */
     @PostMapping("/verify")
-    public ResponseEntity<?> verifyOtp(@RequestParam(required = false) String phone,
-                                       @RequestParam(required = false) String identifier,
-                                       @RequestParam String otp) {
-        String key = (identifier != null && !identifier.isBlank()) ? identifier : phone;
+    public ResponseEntity<?> verifyOtp(
+            @RequestBody(required = false) Map<String, String> body,
+            @RequestParam(required = false) String identifier,
+            @RequestParam(required = false) String phone,
+            @RequestParam(required = false) String otp) {
+
+        // Prefer JSON body → query params
+        String key = null;
+        String otpCode = otp;
+        if (body != null) {
+            key = body.get("identifier");
+            if (key == null || key.isBlank()) key = body.get("phone");
+            if (body.get("otp") != null) otpCode = body.get("otp");
+        }
+        if (key == null || key.isBlank()) key = identifier;
+        if (key == null || key.isBlank()) key = phone;
+
         if (key == null || key.isBlank()) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "Target phone number or identifier is required."));
         }
+        if (otpCode == null || otpCode.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "OTP code is required."));
+        }
 
-        boolean valid = otpService.verifyOtp(key, otp);
+        boolean valid = otpService.verifyOtp(key, otpCode);
         if (!valid) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "Invalid or expired OTP code. Please request a new one."));
